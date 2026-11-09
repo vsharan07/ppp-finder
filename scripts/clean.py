@@ -29,5 +29,9 @@ for r in list(wb['Overall'].iter_rows(values_only=True))[1:]:
 for s in sites.values():
     s['name']=s['name'].replace('District 11','District 11)').replace(' –',' – ')
 out=sorted(sites.values(),key=lambda s:(s['program'],s['name']))
-for i,s in enumerate(out): s['id']=i; s['counties'].sort()
+# 'key' is a stable name for each listing. The update form and the staff screen use it to match a request to a site.
+import unicodedata
+slug=lambda t: re.sub(r'[^a-z0-9]+','-',unicodedata.normalize('NFKD',t).encode('ascii','ignore').decode().lower()).strip('-')
+for i,s in enumerate(out): s['id']=i; s['key']=slug(s['program']+' '+s['name']); s['counties'].sort()
+assert len({s['key'] for s in out})==len(out), 'two sites ended up with the same key'
 print(json.dumps(out,indent=1,ensure_ascii=False))

@@ -20,6 +20,7 @@
   --pat:#2e7f86; --pat-soft:#e3f1f2; --hippy:#c4491f; --hippy-soft:#fdebe4;
   --map-empty:#eef2f2; --map-cover:#5fa6ac; --map-sel:#e8603c; --map-stroke:#ffffff;
   --warn-soft:#fdf1ec; --focus:#2e7f86;
+  --ok:#256b43; --ok-soft:#e2f3e8; --wait:#7d5200; --wait-soft:#fcefcf; --shut:#8c342a; --shut-soft:#f8e5e2; --unk:#566163; --unk-soft:#edf1f1;
   --f-display:"Montserrat", "Avenir Next", "Segoe UI", sans-serif;
   --f-body:"Montserrat", "Avenir Next", "Segoe UI", sans-serif;
   --r:10px;
@@ -140,6 +141,19 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
 .privacy b{color:var(--ink)}
 .preview{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}
 .err{color:#b3261e;font-size:13px}
+/* Enrollment status. Shown only once at least one site has confirmed whether it is taking new families. */
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;border-radius:999px;padding:2px 10px}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.st.enrolling{background:var(--ok-soft);color:var(--ok)}
+.st.waitlist{background:var(--wait-soft);color:var(--wait)}
+.st.closed{background:var(--shut-soft);color:var(--shut)}
+.st.unknown{background:var(--unk-soft);color:var(--unk)}
+.st.unknown::before{background:transparent;border:1.5px solid currentColor}
+.st.mixed{background:var(--teal-soft);color:var(--teal-deep)}
+.open{margin:6px 0 0}
+.percounty{display:flex;gap:8px;align-items:center;justify-content:space-between;max-width:340px;padding:2px 0}
+.hidefull{font-size:14px!important;cursor:pointer}
+.preview-note{font-size:14px;background:var(--wait-soft);color:var(--wait);border-radius:var(--r);padding:10px 12px}
 .foot{font-size:13px;color:var(--muted)}
 @media (max-width:980px){.bar{grid-template-columns:1fr 1fr}.bar .resetwrap{grid-column:1/-1}}
 @media (max-width:860px){.main{grid-template-columns:1fr}.side{display:contents}.mapbox{order:1}.zipbox{order:2}.results{order:3}.explain{order:4}}
@@ -211,6 +225,7 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
   </div>
 
   <p class="foot" data-t="foot">Programs are listed by the counties they serve, not by office location. A program's office may be in a nearby town, since home visitors travel to families.</p>
+  <p class="foot"><span data-t="staffQ">Work at a PAT or HIPPY program?</span> <a href="update.html" data-t="staffA">Update your listing</a></p>
  </div>
 </div>
 
@@ -220,6 +235,7 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
       <h2 id="dlgTitle"></h2>
       <p class="note" id="dlgSub" style="margin:4px 0 0"></p>
     </div>
+    <div class="privacy" id="dlgEnroll" hidden></div>
     <fieldset>
       <span class="lbl" data-t="fWho">Who is filling this out?</span>
       <div class="radios">
@@ -270,7 +286,131 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
 </dialog>
 
 <script>
-const SITES=[
+// Shared by the finder, the site update form, and the staff screen. scripts/build.py pastes this file into each page.
+const PP={
+  // How long an enrollment answer counts before the finder stops showing it, and how often the rest of a
+  // listing should be re-checked. Both are starting proposals for Parent Possible to set.
+  STALE_DAYS:45,
+  DETAILS_STALE_DAYS:180,
+  DUE_SOON_DAYS:10,
+  DRAFT_KEY:'ppFinderDraft', REQ_KEY:'ppFinderRequests',
+  INBOX:'[Parent Possible intake inbox]',
+  AGES:['Prenatal','Birth to 1','1 to 2','2 to 3','3 to 4','4 to 5','5 and older'],
+  STATUSES:['enrolling','waitlist','closed'],
+  STATUS_LABEL:{enrolling:'Taking new families',waitlist:'Waitlist',closed:'Not taking new families',unknown:'Not confirmed'},
+  // Details that belong to the whole organization, so one edit changes the listing in every county it serves.
+  FIELDS:{name:'Program name',contactName:'Referral contact',email:'Referral email',phone:'Phone',website:'Website',
+    address:'Office address',city:'Office city',zip:'Office ZIP',languages:'Languages',ages:'Ages served',counties:'Counties served'},
+
+  iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')},
+  today(){return PP.iso(new Date())},
+  daysAgo(n){const d=new Date();d.setDate(d.getDate()-n);return PP.iso(d)},
+  parse(iso){const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(iso||'');return m?new Date(+m[1],+m[2]-1,+m[3]):null},
+  daysSince(iso){const d=PP.parse(iso);if(!d)return Infinity;const n=new Date();n.setHours(0,0,0,0);return Math.round((n-d)/864e5)},
+  fmtDate(iso,locale){const d=PP.parse(iso);return d?d.toLocaleDateString(locale||'en-US',{month:'short',day:'numeric',year:'numeric'}):''},
+
+  // Enrollment for one site in one county. Enrollment is stored per county because a site can be open in one
+  // county and full in the next. An answer that is missing or too old comes back as 'unknown', never as 'closed'.
+  status(site,county){
+    const e=(site.enrollment||{})[county];
+    if(!e||!PP.STATUSES.includes(e.status))return {status:'unknown',confirmed:''};
+    if(PP.daysSince(e.confirmed)>PP.STALE_DAYS)return {status:'unknown',confirmed:e.confirmed,was:e.status};
+    return {status:e.status,confirmed:e.confirmed};
+  },
+  // Where an "I'm interested" request should go. Empty means it goes to Parent Possible to forward.
+  referralEmail(site){return site.emailBounced?'':(site.email||'')},
+
+  read(key,fallback){try{const v=JSON.parse(localStorage.getItem(key));return v==null?fallback:v}catch(e){return fallback}},
+  write(key,v){try{if(v==null)localStorage.removeItem(key);else localStorage.setItem(key,JSON.stringify(v));return true}catch(e){return false}},
+  copy(o){return JSON.parse(JSON.stringify(o))},
+  same(a,b){return JSON.stringify(a)===JSON.stringify(b)},
+  slug(t){return t.normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')},
+  esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))},
+  // Same order as scripts/clean.py: by program, then by name.
+  sortSites(list){const cmp=(x,y)=>x<y?-1:x>y?1:0;list.sort((a,b)=>cmp(a.program,b.program)||cmp(a.name,b.name));list.forEach((s,i)=>{s.id=i});return list},
+  toast(msg){
+    const el=document.createElement('div');el.className='toast';el.setAttribute('role','status');el.textContent=msg;
+    document.body.append(el);setTimeout(()=>el.remove(),2400);
+  },
+
+  // What differs between two versions of a listing, as a list of single changes.
+  diff(a,b){
+    const out=[];
+    Object.keys(PP.FIELDS).forEach(f=>{
+      const blank=Array.isArray(a[f])||Array.isArray(b[f])?[]:'';
+      const x=a[f]==null?blank:a[f],y=b[f]==null?blank:b[f];
+      if(!PP.same(x,y))out.push({field:f,from:x,to:y});
+    });
+    (b.counties||[]).forEach(c=>{
+      const x=(a.enrollment||{})[c]||{},y=(b.enrollment||{})[c]||{};
+      if((x.status||'unknown')!==(y.status||'unknown')||(x.confirmed||'')!==(y.confirmed||''))
+        out.push({field:'enrollment',county:c,from:x.status||'unknown',to:y.status||'unknown',confirmed:y.confirmed||''});
+    });
+    return out;
+  },
+  // Apply one change to a listing. `date` is the day the site confirmed it.
+  apply(site,ch,date){
+    if(ch.field==='enrollment'){
+      site.enrollment=site.enrollment||{};
+      if(ch.to==='unknown')delete site.enrollment[ch.county];
+      else site.enrollment[ch.county]={status:ch.to,confirmed:ch.confirmed||date};
+      if(!Object.keys(site.enrollment).length)delete site.enrollment;
+      return;
+    }
+    site[ch.field]=PP.copy(ch.to);
+    if(ch.field==='email')delete site.emailBounced;
+    if(ch.field==='counties'){
+      site.counties.sort();
+      Object.keys(site.enrollment||{}).forEach(c=>{if(!site.counties.includes(c))delete site.enrollment[c]});
+    }
+  },
+  // Words for a change, for the review step and the staff screen.
+  show(v){return Array.isArray(v)?(v.join(', ')||'None listed'):(v||'Blank')},
+  label(ch){return ch.field==='enrollment'?'Enrollment':PP.FIELDS[ch.field]},
+  scope(ch,site){
+    if(ch.field==='enrollment')return ch.county+' County only';
+    const n=((site&&site.counties)||[]).length;
+    return n>1?'All '+n+' counties':'Whole listing';
+  },
+  fromTo(ch){
+    if(ch.field==='enrollment')return [PP.STATUS_LABEL[ch.from]||ch.from,PP.STATUS_LABEL[ch.to]||ch.to];
+    return [PP.show(ch.from),PP.show(ch.to)];
+  },
+
+  // Update requests travel as a short code so one can be pasted from an email into the staff screen.
+  encode(o){return 'PP-UPDATE:'+btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o))))+':END'},
+  decode(text){
+    const m=/PP-UPDATE:([A-Za-z0-9+\/=\s]+?):END/.exec(text||'');if(!m)return null;
+    try{return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(m[1].replace(/\s+/g,'')),c=>c.charCodeAt(0))))}catch(e){return null}
+  },
+  async clip(text){
+    try{await navigator.clipboard.writeText(text);return true}catch(e){}
+    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0';document.body.append(ta);ta.select();
+    let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+    ta.remove();return ok;
+  },
+};
+
+// One change as a row: what changed, how far it reaches, and before and after. Used on the update form and the staff screen.
+PP.changeRow=function(ch,site,lead){
+  const e=PP.esc,[from,to]=PP.fromTo(ch),enr=ch.field==='enrollment';
+  let ft;
+  if(enr){
+    const pill=`<span class="st ${e(ch.to)}">${e(to)}</span>`;
+    ft=ch.from===ch.to?`${pill} <span class="note">No change, confirmed again</span>`:`<span class="from">${e(from)}</span><span class="arrow">→</span>${pill}`;
+  }else if(Array.isArray(ch.to)){
+    const add=ch.to.filter(x=>!(ch.from||[]).includes(x)),drop=(ch.from||[]).filter(x=>!ch.to.includes(x));
+    ft=`<span class="to">${e(to)}</span> <span class="note">${e([add.length?'Adds '+add.join(', '):'',drop.length?'Removes '+drop.join(', '):''].filter(Boolean).join('. '))}</span>`;
+  }else if(!ch.from)ft=`<span class="note">Add</span> <span class="to">${e(to)}</span>`;
+  else if(!ch.to)ft=`<span class="note">Remove</span> <span class="from">${e(from)}</span>`;
+  else ft=`<span class="from">${e(from)}</span><span class="arrow">→</span><span class="to">${e(to)}</span>`;
+  return `<div class="chg"><span class="what">${lead||''}${e(PP.label(ch))}${enr?' in '+e(ch.county)+' County':''}</span><span class="where${enr?' one':''}">${e(PP.scope(ch,site))}</span><span class="ft">${ft}</span></div>`;
+};
+
+
+// Staff can open the finder with ?preview=1 to see their unpublished edits (saved in their own browser by admin.html).
+const PREVIEW=new URLSearchParams(location.search).get('preview')==='1'?PP.read(PP.DRAFT_KEY,null):null;
+const SITES=PREVIEW&&Array.isArray(PREVIEW.sites)?PP.sortSites(PREVIEW.sites):[
  {
   "program": "HIPPY",
   "name": "Boulder Housing Partners",
@@ -291,7 +431,8 @@ const SITES=[
   "counties": [
    "Boulder"
   ],
-  "id": 0
+  "id": 0,
+  "key": "hippy-boulder-housing-partners"
  },
  {
   "program": "HIPPY",
@@ -318,7 +459,8 @@ const SITES=[
    "Otero",
    "Pueblo"
   ],
-  "id": 1
+  "id": 1,
+  "key": "hippy-catholic-charities-diocese-of-southern-colorado"
  },
  {
   "program": "HIPPY",
@@ -340,7 +482,8 @@ const SITES=[
   "counties": [
    "Denver"
   ],
-  "id": 2
+  "id": 2,
+  "key": "hippy-clayton-early-learning"
  },
  {
   "program": "HIPPY",
@@ -363,7 +506,8 @@ const SITES=[
    "Adams",
    "Denver"
   ],
-  "id": 3
+  "id": 3,
+  "key": "hippy-focus-points-family-resource-center"
  },
  {
   "program": "HIPPY",
@@ -389,7 +533,8 @@ const SITES=[
   "counties": [
    "Jefferson"
   ],
-  "id": 4
+  "id": 4,
+  "key": "hippy-jefferson-county-public-schools-jeffco-hippy"
  },
  {
   "program": "HIPPY",
@@ -413,7 +558,8 @@ const SITES=[
   "counties": [
    "Arapahoe"
   ],
-  "id": 5
+  "id": 5,
+  "key": "hippy-mile-high-united-way"
  },
  {
   "program": "HIPPY",
@@ -441,7 +587,8 @@ const SITES=[
    "Larimer",
    "Weld"
   ],
-  "id": 6
+  "id": 6,
+  "key": "hippy-north-range-behavioral-health"
  },
  {
   "program": "HIPPY",
@@ -464,7 +611,8 @@ const SITES=[
   "counties": [
    "Denver"
   ],
-  "id": 7
+  "id": 7,
+  "key": "hippy-roots-family-center"
  },
  {
   "program": "HIPPY",
@@ -493,7 +641,8 @@ const SITES=[
    "Rio Grande",
    "Saguache"
   ],
-  "id": 8
+  "id": 8,
+  "key": "hippy-san-luis-valley-area-health-education-center-slv-ahec"
  },
  {
   "program": "HIPPY",
@@ -523,7 +672,8 @@ const SITES=[
    "Arapahoe",
    "Denver"
   ],
-  "id": 9
+  "id": 9,
+  "key": "hippy-spring-institute-for-intercultural-learning"
  },
  {
   "program": "HIPPY",
@@ -545,7 +695,8 @@ const SITES=[
   "counties": [
    "Park"
   ],
-  "id": 10
+  "id": 10,
+  "key": "hippy-teller-park-ece-hippy"
  },
  {
   "program": "PAT",
@@ -571,7 +722,8 @@ const SITES=[
   "counties": [
    "El Paso"
   ],
-  "id": 11
+  "id": 11,
+  "key": "pat-adult-family-education-colorado-springs-school-district-11"
  },
  {
   "program": "PAT",
@@ -597,7 +749,8 @@ const SITES=[
   "counties": [
    "Larimer"
   ],
-  "id": 12
+  "id": 12,
+  "key": "pat-berthoud-and-loveland-pat-house-of-neighborly-service"
  },
  {
   "program": "PAT",
@@ -626,7 +779,8 @@ const SITES=[
    "Ouray",
    "San Miguel"
   ],
-  "id": 13
+  "id": 13,
+  "key": "pat-bright-futures-for-early-childhood-and-families"
  },
  {
   "program": "PAT",
@@ -654,7 +808,8 @@ const SITES=[
    "Fremont",
    "Pueblo"
   ],
-  "id": 14
+  "id": 14,
+  "key": "pat-catholic-charities-of-southern-colorado"
  },
  {
   "program": "PAT",
@@ -680,7 +835,8 @@ const SITES=[
   "counties": [
    "Teller"
   ],
-  "id": 15
+  "id": 15,
+  "key": "pat-community-partnership-family-resource-center"
  },
  {
   "program": "PAT",
@@ -706,7 +862,8 @@ const SITES=[
   "counties": [
    "Delta"
   ],
-  "id": 16
+  "id": 16,
+  "key": "pat-delta-family-center"
  },
  {
   "program": "PAT",
@@ -735,7 +892,8 @@ const SITES=[
    "Costilla",
    "Saguache"
   ],
-  "id": 17
+  "id": 17,
+  "key": "pat-early-childhood-council-of-the-san-luis-valley"
  },
  {
   "program": "PAT",
@@ -759,7 +917,8 @@ const SITES=[
   "counties": [
    "Routt"
   ],
-  "id": 18
+  "id": 18,
+  "key": "pat-family-development-center-newborn-network"
  },
  {
   "program": "PAT",
@@ -784,7 +943,8 @@ const SITES=[
   "counties": [
    "Denver"
   ],
-  "id": 19
+  "id": 19,
+  "key": "pat-family-star-montessori"
  },
  {
   "program": "PAT",
@@ -809,7 +969,8 @@ const SITES=[
   "counties": [
    "Denver"
   ],
-  "id": 20
+  "id": 20,
+  "key": "pat-focus-points-family-resource-center"
  },
  {
   "program": "PAT",
@@ -837,7 +998,8 @@ const SITES=[
    "Adams",
    "Broomfield"
   ],
-  "id": 21
+  "id": 21,
+  "key": "pat-growing-home"
  },
  {
   "program": "PAT",
@@ -865,7 +1027,8 @@ const SITES=[
    "Mesa",
    "Montrose"
   ],
-  "id": 22
+  "id": 22,
+  "key": "pat-hilltop-family-first"
  },
  {
   "program": "PAT",
@@ -893,7 +1056,8 @@ const SITES=[
    "Huerfano",
    "Las Animas"
   ],
-  "id": 23
+  "id": 23,
+  "key": "pat-huerfano-las-animas-counties-early-childhood-advisory-council"
  },
  {
   "program": "PAT",
@@ -917,7 +1081,8 @@ const SITES=[
   "counties": [
    "Jefferson"
   ],
-  "id": 24
+  "id": 24,
+  "key": "pat-jefferson-county-public-schools"
  },
  {
   "program": "PAT",
@@ -943,7 +1108,8 @@ const SITES=[
   "counties": [
    "La Plata"
   ],
-  "id": 25
+  "id": 25,
+  "key": "pat-la-plata-family-centers"
  },
  {
   "program": "PAT",
@@ -971,7 +1137,8 @@ const SITES=[
    "Denver",
    "Jefferson"
   ],
-  "id": 26
+  "id": 26,
+  "key": "pat-metropolitan-state-university-of-denver"
  },
  {
   "program": "PAT",
@@ -998,7 +1165,8 @@ const SITES=[
   "counties": [
    "Morgan"
   ],
-  "id": 27
+  "id": 27,
+  "key": "pat-morgan-county-family-center"
  },
  {
   "program": "PAT",
@@ -1025,7 +1193,8 @@ const SITES=[
   "counties": [
    "Weld"
   ],
-  "id": 28
+  "id": 28,
+  "key": "pat-north-range-behavioral-health"
  },
  {
   "program": "PAT",
@@ -1049,7 +1218,8 @@ const SITES=[
   "counties": [
    "Denver"
   ],
-  "id": 29
+  "id": 29,
+  "key": "pat-roots-family-center"
  },
  {
   "program": "PAT",
@@ -1083,7 +1253,8 @@ const SITES=[
    "Douglas",
    "Jefferson"
   ],
-  "id": 30
+  "id": 30,
+  "key": "pat-shiloh-house"
  },
  {
   "program": "PAT",
@@ -1110,7 +1281,8 @@ const SITES=[
    "Dolores",
    "Montezuma"
   ],
-  "id": 31
+  "id": 31,
+  "key": "pat-the-pinon-project"
  },
  {
   "program": "PAT",
@@ -1138,10 +1310,13 @@ const SITES=[
    "Crowley",
    "Otero"
   ],
-  "id": 32
+  "id": 32,
+  "key": "pat-tri-county-family-care-center"
  }
 ]
 ;
+// Enrollment only shows once at least one site has a current answer, so the page looks the same as before until then.
+const HAS_ENROLL=SITES.some(s=>s.counties.some(c=>PP.status(s,c).status!=='unknown'));
 const MAP=[{"n":"Adams","d":"M431.2,158.9L435.3,157.9L435.3,149.8L437.9,151.5L440.9,147.2L489.8,146.7L525.3,146.2L571.6,145.4L571.9,180.8L492.1,182.3L449,182.5L454.9,177.9L464.7,178.4L461.6,171.1L476.6,171L476.5,164L478.4,160.5L470.1,159.7L464.9,160.8L465,168.1L458.6,168.6L458.6,174.5L448.9,174.5L445.9,176.5L431.3,175.7Z","x":505.8,"y":163.7},{"n":"Alamosa","d":"M326.3,500.3L327,453L389.5,452.8L387.2,458.8L387.2,464.5L384.5,473.7L386.4,476.4L385.2,478.3L358.5,506.4L326.3,506.2Z","x":353.6,"y":477.1},{"n":"Arapahoe","d":"M443,186.5L443,186.5L443,186.5ZM431.4,198.7L431.4,197.6L431.4,197.3L433.3,194.3L439.6,192.3L449.1,198.2L452.8,193.8L447.1,192.3L447.1,188.9L450.9,188.4L449,182.5L492.1,182.3L571.9,180.8L572.4,204.4L571.6,204.4L472.4,206L431.8,206.1Z","x":506.1,"y":194},{"n":"Archuleta","d":"M170.7,495.2L209,495.8L208.9,500L253.9,500.2L253.9,499.1L257.4,499.3L257.1,523L266,527.8L266.6,535.1L278.9,555.2L236,554.8L235.2,553.7L176,552.8L169.4,552.6Z","x":217,"y":527.1},{"n":"Baca","d":"M645.5,464.1L680.6,462.9L756.6,460.3L758,495L760,548.8L688.7,550.9L680.1,550.5L656,551.1L646.6,551.4L645.7,499.6L646.4,499.5Z","x":702.3,"y":506.4},{"n":"Bent","d":"M608.8,380.4L678.8,378.3L680.6,438.4L679.9,438.6L680.6,462.9L645.5,464.1L610,464.8L610.2,440.5Z","x":644.8,"y":421.7},{"n":"Boulder","d":"M428.2,152.8L428.2,152.8L428.2,152.8ZM368.8,112L394.5,112.3L406.4,111.6L431,111.7L430.8,147.1L431.2,147.2L427.5,152.9L425.2,153.2L421.5,159L395.3,159.2L395.3,156.4L366.5,156.5L364.7,155.4L365.1,145.3L370.3,141.1L370.7,127.5L367.3,125.8L366.2,120ZM425.2,153.2L427.5,152.9L425.2,153.2Z","x":399.3,"y":134.7},{"n":"Broomfield","d":"M427.5,152.9L425.2,153.2L427.5,152.9ZM421.5,159L425.2,153.2L427.5,152.9L431.2,147.2L437.9,146.1L436.7,143.7L440.8,141.2L440.9,147.2L437.9,151.5L435.3,149.8L435.3,157.9L431.2,158.9L429.4,160.9ZM428.2,152.8L428.2,152.8L428.2,152.8ZM439,142.7L439,142.7L439,142.7Z","x":431.9,"y":152.7},{"n":"Chaffee","d":"M268.5,282.8L270.9,274.7L311.8,275.3L314,284.2L320.4,284.7L320,291.1L328.7,290.8L335.5,295.9L334.4,299L339.7,300.4L337.8,303.1L341.5,309.3L338.1,315.2L335,324.7L339.6,326.6L340.7,333.3L344.5,337.2L341.8,344.6L341.4,350.3L338.3,350.5L330.2,358.3L325.3,356.8L323.4,361.3L305.4,361.2L296.3,351.5L294.9,342.4L292.3,334.4L286.2,329.1L284,323.9L287.5,320.2L287.2,308.3L294.5,302.4L297.6,295.9L287.7,293.2L282,294.5L272.7,282.7Z","x":311.1,"y":317.3},{"n":"Cheyenne","d":"M631.3,275L678.3,273.4L749,269.9L750.8,317.3L751.2,328.5L643.5,332.1L631.7,332.7L632.2,322.1Z","x":691.1,"y":301.6},{"n":"Clear Creek","d":"M340.2,188.2L344.7,183.1L344.4,174.9L351.1,176.4L353.4,174L360.1,173.9L365,167.5L371,168.7L384.8,180.2L395.3,181.7L395.4,206.4L375.5,206L350.3,206.4L355.9,200.1L354.1,196.8L348.1,195.7L340.2,191.7Z","x":369.7,"y":189.5},{"n":"Conejos","d":"M257.4,499.3L277.9,500.1L326.3,500.3L326.3,506.2L358.5,506.4L357.3,508.2L360.8,515.5L358.1,521.2L360,530.3L357.6,536.5L358.8,540.8L355.3,549.2L361.1,555.4L329.9,555.4L278.9,555.2L266.6,535.1L266,527.8L257.1,523Z","x":309.9,"y":527.4},{"n":"Costilla","d":"M358.5,506.4L385.2,478.3L386.4,476.4L391,471.7L395.3,471.6L398.8,468L406.5,465.4L413,470.5L418.5,470.6L415,475.8L419.3,480.7L419.7,492.8L421.6,492.7L424.8,498.9L420.9,502L420.9,515.6L422.1,515L422.3,555.5L414.9,555.5L361.1,555.4L355.3,549.2L358.8,540.8L357.6,536.5L360,530.3L358.1,521.2L360.8,515.5L357.3,508.2Z","x":392.5,"y":517.1},{"n":"Crowley","d":"M538.6,346.8L585.1,346L596.9,346.5L597.1,370.2L597.7,380.7L597.2,393.3L585.7,393.7L585.9,401.6L562.5,402.1L561.3,400.7L547.8,399.8L545.5,397.8L538.6,397.9Z","x":567.6,"y":372.9},{"n":"Custer","d":"M353.1,383L432.7,383.9L432.9,430.4L429.1,425L424.8,425.6L422.5,418.2L417.5,418L412.5,424.1L409.1,431.6L404.5,427.4L394.1,433.9L387.5,433.2L383.7,427.3L378.3,425.6L373.7,417.8L371,409.9L368,406.5L366.1,397.4L353.8,385.8Z","x":398.8,"y":404.2},{"n":"Delta","d":"M174.1,251.3L172.5,325.9L79.6,323.5L80.3,301.6L105.7,291.8L111.6,283.7L110.9,282L122.9,271.5L130.9,271.6L136.2,269.2L145.6,274.3L154,268.6L159.5,261.3Z","x":134.8,"y":298.8},{"n":"Denver","d":"M431.3,175.7L445.9,176.5L448.9,174.5L458.6,174.5L458.6,168.6L465,168.1L464.9,160.8L470.1,159.7L478.4,160.5L476.5,164L476.6,171L461.6,171.1L464.7,178.4L454.9,177.9L449,182.5L450.9,188.4L447.1,188.9L447.1,192.3L452.8,193.8L449.1,198.2L439.6,192.3L433.3,194.3L431.4,197.3L431.4,197.6L431.4,198.7L425.4,198L431.4,194.6L428.4,192L431.4,188.4ZM443,186.5L443,186.5L443,186.5Z","x":449.7,"y":179.7},{"n":"Dolores","d":"M5.1,427.8L28.5,428.7L29.4,426.7L89.4,428.9L94.1,439L101.4,437.7L104.6,434.7L106.8,436.8L117.7,434.8L131.2,446.3L129.5,453.5L119.4,456.7L118.8,464.4L98.3,464.4L17.3,462.1L2.6,481.6L3.2,475.4Z","x":60.6,"y":447.3},{"n":"Douglas","d":"M431.8,206.1L472.4,206L473,265.2L434,265.4L402.6,265.5L412.8,249.6L419.9,234L419.1,227.8L424.4,224.1L422.9,219.1L428.1,215.8Z","x":444.8,"y":238.2},{"n":"Eagle","d":"M224.8,157.1L264.4,157.5L267.4,156.9L287.3,157.1L288.3,168.4L292.3,178.7L296.8,180.2L301.9,187.2L304.9,187.8L308.3,193L312.8,194.2L313.5,200.5L310.1,204.4L310,210.7L305.5,211.5L305.8,219.3L310.6,228.7L310.6,231.4L302.3,235.4L295.1,234.8L290.3,231L287.2,233.5L215.2,231.9L216.6,156.9Z","x":259.8,"y":197.1},{"n":"El Paso","d":"M434,265.4L473,265.2L537.3,264.6L537.4,299.8L538.6,346.8L484,347.9L444,348.3L443.9,330.6L444.1,310.6L430.1,310.4L430.4,300.8L434.6,300.9Z","x":487.8,"y":305.5},{"n":"Elbert","d":"M472.4,206L571.6,204.4L572,263.9L573.1,299.4L537.4,299.8L537.3,264.6L473,265.2Z","x":528,"y":243.1},{"n":"Fremont","d":"M330.2,358.3L338.3,350.5L341.4,350.3L341.8,344.6L344.5,337.2L340.7,333.3L339.6,326.6L335,324.7L402.7,324.3L412.6,324.3L412.3,331.1L443.9,330.6L444,348.3L444.6,383.8L432.7,383.9L353.1,383L346.6,378.4L343.2,372.7Z","x":391.1,"y":354.7},{"n":"Garfield","d":"M12.5,208.3L13.4,186.3L29.9,186.9L29.8,188.2L65.4,189.6L65.6,183.6L129.8,185.4L130.2,167.7L155.7,167.7L183,168.5L183.3,156.4L195.3,157L195.7,133.2L224.8,133.6L225.4,145.6L224.8,157.1L216.6,156.9L215.2,231.9L182.1,231.3L79.2,228.6L11.8,226.2Z","x":133,"y":198.2},{"n":"Gilpin","d":"M366.5,156.5L395.3,156.4L395.3,159.2L395.3,181.7L384.8,180.2L371,168.7L365,167.5L363.9,162.1Z","x":382.5,"y":166.7},{"n":"Grand","d":"M265.7,86.1L268.3,88.5L269.7,95.3L277.8,97L282,91.3L285.6,98.1L292.3,100L296,98.4L301.9,102.1L302.3,98.7L306.1,98.4L309,102.9L315.7,100.5L318.7,102.2L330.2,96.8L337.3,99.8L338.8,94.9L343.3,91.6L343.7,83.5L348.1,81.2L352.9,82.9L352.2,90.1L357,98.5L365.5,106.2L368.8,112L366.2,120L367.3,125.8L370.7,127.5L370.3,141.1L365.1,145.3L364.7,155.4L366.5,156.5L363.9,162.1L365,167.5L360.1,173.9L353.4,174L351.1,176.4L344.4,174.9L344.7,183.1L340.2,188.2L332.7,190.1L326.3,184.6L323.8,173.5L319,168.3L311.5,165.6L306.3,158.7L291.4,158.5L287.3,157.1L267.4,156.9L266.4,146.4L267.4,100.3L265.2,100.2Z","x":320.4,"y":133.2},{"n":"Gunnison","d":"M157.2,375.3L171.4,375.7L172.5,325.9L174.1,251.3L179.4,249.7L181.8,246.1L185.5,246.3L187.8,248.7L187.3,254.3L189.5,257.7L195.5,260.5L196.9,265.2L219.6,265.6L227,272.5L226.2,276.1L236.3,283.2L240.9,280.8L242.4,284L247.3,285.2L253.1,276.5L258.8,274.9L262.9,276.4L268.5,282.8L272.7,282.7L282,294.5L287.7,293.2L297.6,295.9L294.5,302.4L287.2,308.3L287.5,320.2L284,323.9L286.2,329.1L292.3,334.4L294.9,342.4L296.3,351.5L305.4,361.2L225.2,359.9L224.2,397.7L163.6,396.5L164.4,395L162,382.6Z","x":222.2,"y":327},{"n":"Hinsdale","d":"M163.6,396.5L224.2,397.7L224.1,423.7L216.8,422.9L209.1,425.8L207.7,461.5L210,461.7L209,495.8L170.7,495.2L171.3,465.7L171.7,448.2L174.4,446.4L173.4,442.6L168.4,440.3L166.2,433.7L168.2,430L166.8,424.2L163,421.2L160.8,417.6L165.5,416.7L169.5,408.4L163.8,403.1Z","x":191.4,"y":441.6},{"n":"Huerfano","d":"M389.5,452.8L389.5,446.8L391.8,445.6L392.2,439.2L387.5,433.2L394.1,433.9L404.5,427.4L409.1,431.6L412.5,424.1L417.5,418L422.5,418.2L424.8,425.6L429.1,425L432.9,430.4L436.8,435.1L476,432.1L508.1,443.1L496.7,453.9L487.6,470.6L486.1,477L475,487.2L472.3,487.1L471.6,494.2L465.4,499.3L451.5,502.1L446.1,501L438.7,504.6L426.8,514.3L422.1,515L420.9,515.6L420.9,502L424.8,498.9L421.6,492.7L419.7,492.8L419.3,480.7L415,475.8L418.5,470.6L413,470.5L406.5,465.4L398.8,468L395.3,471.6L391,471.7L386.4,476.4L384.5,473.7L387.2,464.5L387.2,458.8Z","x":442.8,"y":461.7},{"n":"Jackson","d":"M245.3,10.1L300.5,11.2L313.8,11.5L314.1,19.7L319.2,24.7L320.3,29L328.4,37.9L338.6,60L342.2,70.3L342.6,77.2L346.7,76.5L348.1,81.2L343.7,83.5L343.3,91.6L338.8,94.9L337.3,99.8L330.2,96.8L318.7,102.2L315.7,100.5L309,102.9L306.1,98.4L302.3,98.7L301.9,102.1L296,98.4L292.3,100L285.6,98.1L282,91.3L277.8,97L269.7,95.3L268.3,88.5L265.7,86.1L265.5,77.4L260.8,68.3L260.5,62.8L264.3,51.9L264,46.4L267.8,36.2L262.4,26.1L258,28L253.2,23.3L251,24.5L246.3,20.7L243.8,14.5Z","x":297.8,"y":56.4},{"n":"Jefferson","d":"M431.4,197.3L431.4,197.6L431.4,197.3ZM395.4,206.4L395.3,181.7L395.3,159.2L421.5,159L429.4,160.9L431.2,158.9L431.3,175.7L431.4,188.4L428.4,192L431.4,194.6L425.4,198L431.4,198.7L431.8,206.1L428.1,215.8L422.9,219.1L424.4,224.1L419.1,227.8L419.9,234L412.8,249.6L402.6,265.5L395.4,265.6Z","x":410.9,"y":203.7},{"n":"Kiowa","d":"M596.9,346.5L596.9,345.6L632,344.5L631.7,332.7L643.5,332.1L751.2,328.5L753,375.6L678.8,378.3L608.8,380.4L597.7,380.7L597.1,370.2Z","x":678.3,"y":355.7},{"n":"Kit Carson","d":"M630.2,203.2L667.1,201.8L745.9,198.3L745.9,199.2L747.3,235.2L748.6,258.1L749,269.9L678.3,273.4L631.3,275L631.8,262.6Z","x":689.2,"y":236.8},{"n":"La Plata","d":"M118.8,464.4L171.3,465.7L170.7,495.2L169.4,552.6L86.4,550.6L72,550L77.3,542.7L80.4,532.5L82.4,530.5L82.3,520.8L87.5,516.4L90.8,510.8L93.3,502.3L103.5,498.5L106.4,491.8L111.6,488L111.4,479.9L113.2,470.8Z","x":131.3,"y":512.7},{"n":"Lake","d":"M287.2,233.5L290.3,231L295.1,234.8L302.3,235.4L310.6,231.4L318.1,231.5L316.2,239.4L312.8,240.9L312.7,254.5L313.8,264.3L309.9,268.7L314.1,271.2L311.8,275.3L270.9,274.7L270.2,270.6L273.3,266.2L272.9,261.4L278.6,259.9L281.4,245.6L281.1,240.2L286.8,239.7Z","x":295.8,"y":255.5},{"n":"Larimer","d":"M313.8,11.5L361.6,11.9L407.7,11.7L441.9,11.6L442.2,54.5L441.9,66.3L442.1,99.8L430.6,99.8L431,111.7L406.4,111.6L394.5,112.3L368.8,112L365.5,106.2L357,98.5L352.2,90.1L352.9,82.9L348.1,81.2L346.7,76.5L342.6,77.2L342.2,70.3L338.6,60L328.4,37.9L320.3,29L319.2,24.7L314.1,19.7Z","x":388.7,"y":56.8},{"n":"Las Animas","d":"M422.1,515L426.8,514.3L438.7,504.6L446.1,501L451.5,502.1L465.4,499.3L471.6,494.2L472.3,487.1L475,487.2L486.1,477L487.6,470.6L496.7,453.9L508.1,443.1L539.1,453.8L539.7,466.2L610,464.8L645.5,464.1L646.4,499.5L645.7,499.6L646.6,551.4L546.5,554.1L510.7,555L439,555.6L422.3,555.5Z","x":542.6,"y":510.6},{"n":"Lincoln","d":"M537.4,299.8L573.1,299.4L572,263.9L571.6,204.4L572.4,204.4L630.2,203.2L631.8,262.6L631.3,275L632.2,322.1L631.7,332.7L632,344.5L596.9,345.6L596.9,346.5L585.1,346L538.6,346.8Z","x":594.3,"y":282.5},{"n":"Logan","d":"M582.1,9.1L602,8.7L676.7,6.7L677.8,41L676.9,46.9L678,83.2L665.8,83.6L603.1,85.6L594.9,85.7L594.6,73.9L582.8,74.2L582.3,50.6L583,49.9Z","x":630.8,"y":45.7},{"n":"Mesa","d":"M11.8,226.2L79.2,228.6L182.1,231.3L178.2,238.2L187.1,244.6L185.5,246.3L181.8,246.1L179.4,249.7L174.1,251.3L159.5,261.3L154,268.6L145.6,274.3L136.2,269.2L130.9,271.6L122.9,271.5L110.9,282L111.6,283.7L105.7,291.8L80.3,301.6L79.6,323.5L78.5,346.2L6.4,343.7L7.6,313.9L9.3,288.8Z","x":71.6,"y":275.5},{"n":"Mineral","d":"M224.1,423.7L227.6,421.2L229.9,424.1L236.8,423.2L240.2,429L245.2,429.8L248.2,433.7L256.7,435.4L256.6,440.6L256.3,463.8L254.4,463.7L253.9,499.1L253.9,500.2L208.9,500L209,495.8L210,461.7L207.7,461.5L209.1,425.8L216.8,422.9Z","x":231.4,"y":462.7},{"n":"Moffat","d":"M19,50.2L20.8,4.4L109.9,7.4L136.7,7.9L198.2,9.2L197.5,64L191.6,63.9L191.4,71.7L185.5,71.6L184.5,99.8L183.4,99.8L183.4,114.8L60.6,111.6L16.3,109.9L17.8,72.2Z","x":105.4,"y":59.1},{"n":"Montezuma","d":"M2.6,481.6L17.3,462.1L98.3,464.4L118.8,464.4L113.2,470.8L111.4,479.9L111.6,488L106.4,491.8L103.5,498.5L93.3,502.3L90.8,510.8L87.5,516.4L82.3,520.8L82.4,530.5L80.4,532.5L77.3,542.7L72,550L0,547.6Z","x":50.1,"y":503.2},{"n":"Montrose","d":"M6.4,343.7L78.5,346.2L79.6,323.5L172.5,325.9L171.4,375.7L157.2,375.3L157.3,371.3L104.2,370L107.1,372.4L108.8,380.4L116.9,380.6L124.4,385.8L123.4,394.8L121.5,394.8L20.7,391.1L6.5,390.8L5.2,374.2Z","x":89.9,"y":359.7},{"n":"Morgan","d":"M582.8,74.2L594.6,73.9L594.9,85.7L594.8,97.5L595.9,144.9L571.6,145.4L525.3,146.2L524.2,75.1Z","x":559.9,"y":110},{"n":"Otero","d":"M538.6,397.9L545.5,397.8L547.8,399.8L561.3,400.7L562.5,402.1L585.9,401.6L585.7,393.7L597.2,393.3L597.7,380.7L608.8,380.4L610.2,440.5L610,464.8L539.7,466.2L539.1,453.8L539.3,441.9Z","x":575.8,"y":430.5},{"n":"Ouray","d":"M157.2,375.3L162,382.6L164.4,395L163.6,396.5L163.8,403.1L169.5,408.4L165.5,416.7L160.8,417.6L163,421.2L155.4,421.1L155.6,427.1L149.4,430.8L144.8,429L145.6,425.6L138.9,417.5L133.2,416.8L127.9,412.1L129,400L122.9,399.7L121.5,394.8L123.4,394.8L124.4,385.8L116.9,380.6L108.8,380.4L107.1,372.4L104.2,370L157.3,371.3Z","x":142.5,"y":395},{"n":"Park","d":"M318.1,231.5L326.4,234.3L329.8,233.9L332.9,228.5L337.4,226.8L335.9,223.6L341.6,221.1L347.6,214.6L346.1,212.9L351.4,210L350.3,206.4L375.5,206L395.4,206.4L395.4,265.6L402.6,265.5L402.7,324.3L335,324.7L338.1,315.2L341.5,309.3L337.8,303.1L339.7,300.4L334.4,299L335.5,295.9L328.7,290.8L320,291.1L320.4,284.7L314,284.2L311.8,275.3L314.1,271.2L309.9,268.7L313.8,264.3L312.7,254.5L312.8,240.9L316.2,239.4Z","x":361.8,"y":267.1},{"n":"Phillips","d":"M677.8,41L739.5,38.8L739.7,45.8L741.1,80.8L678,83.2L676.9,46.9Z","x":708.8,"y":61},{"n":"Pitkin","d":"M182.1,231.3L215.2,231.9L287.2,233.5L286.8,239.7L281.1,240.2L281.4,245.6L278.6,259.9L272.9,261.4L273.3,266.2L270.2,270.6L270.9,274.7L268.5,282.8L262.9,276.4L258.8,274.9L253.1,276.5L247.3,285.2L242.4,284L240.9,280.8L236.3,283.2L226.2,276.1L227,272.5L219.6,265.6L196.9,265.2L195.5,260.5L189.5,257.7L187.3,254.3L187.8,248.7L185.5,246.3L187.1,244.6L178.2,238.2Z","x":235.6,"y":252.3},{"n":"Prowers","d":"M678.8,378.3L753,375.6L753.1,376.4L756.1,447.5L756.6,460.3L680.6,462.9L679.9,438.6L680.6,438.4Z","x":717.4,"y":419.5},{"n":"Pueblo","d":"M432.7,383.9L444.6,383.8L444,348.3L484,347.9L538.6,346.8L538.6,397.9L539.3,441.9L539.1,453.8L508.1,443.1L476,432.1L436.8,435.1L432.9,430.4Z","x":490.2,"y":394.9},{"n":"Rio Blanco","d":"M16.3,109.9L60.6,111.6L183.4,114.8L225.1,115.4L224.8,133.6L195.7,133.2L195.3,157L183.3,156.4L183,168.5L155.7,167.7L130.2,167.7L129.8,185.4L65.6,183.6L65.4,189.6L29.8,188.2L29.9,186.9L13.4,186.3Z","x":101.8,"y":145.7},{"n":"Rio Grande","d":"M256.6,440.6L268.2,440.8L268,452.6L327,453L326.3,500.3L277.9,500.1L257.4,499.3L253.9,499.1L254.4,463.7L256.3,463.8Z","x":289.6,"y":475.3},{"n":"Routt","d":"M198.2,9.2L245.3,10.1L243.8,14.5L246.3,20.7L251,24.5L253.2,23.3L258,28L262.4,26.1L267.8,36.2L264,46.4L264.3,51.9L260.5,62.8L260.8,68.3L265.5,77.4L265.7,86.1L265.2,100.2L267.4,100.3L266.4,146.4L267.4,156.9L264.4,157.5L224.8,157.1L225.4,145.6L224.8,133.6L225.1,115.4L183.4,114.8L183.4,99.8L184.5,99.8L185.5,71.6L191.4,71.7L191.6,63.9L197.5,64Z","x":230.6,"y":80.3},{"n":"Saguache","d":"M224.2,397.7L225.2,359.9L305.4,361.2L323.4,361.3L325.3,356.8L330.2,358.3L343.2,372.7L346.6,378.4L353.1,383L353.8,385.8L366.1,397.4L368,406.5L371,409.9L373.7,417.8L378.3,425.6L383.7,427.3L387.5,433.2L392.2,439.2L391.8,445.6L389.5,446.8L389.5,452.8L327,453L268,452.6L268.2,440.8L256.6,440.6L256.7,435.4L248.2,433.7L245.2,429.8L240.2,429L236.8,423.2L229.9,424.1L227.6,421.2L224.1,423.7Z","x":301.2,"y":407.7},{"n":"San Juan","d":"M131.2,446.3L138.3,440L140,433.9L144.8,429L149.4,430.8L155.6,427.1L155.4,421.1L163,421.2L166.8,424.2L168.2,430L166.2,433.7L168.4,440.3L173.4,442.6L174.4,446.4L171.7,448.2L171.3,465.7L118.8,464.4L119.4,456.7L129.5,453.5Z","x":150.8,"y":448.3},{"n":"San Miguel","d":"M6.5,390.8L20.7,391.1L121.5,394.8L122.9,399.7L129,400L127.9,412.1L133.2,416.8L138.9,417.5L145.6,425.6L144.8,429L140,433.9L138.3,440L131.2,446.3L117.7,434.8L106.8,436.8L104.6,434.7L101.4,437.7L94.1,439L89.4,428.9L29.4,426.7L28.5,428.7L5.1,427.8Z","x":73.7,"y":413.4},{"n":"Sedgwick","d":"M676.7,6.7L680,6.4L738.2,4.5L739.5,38.8L677.8,41Z","x":708,"y":22.7},{"n":"Summit","d":"M287.3,157.1L291.4,158.5L306.3,158.7L311.5,165.6L319,168.3L323.8,173.5L326.3,184.6L332.7,190.1L340.2,188.2L340.2,191.7L348.1,195.7L354.1,196.8L355.9,200.1L350.3,206.4L351.4,210L346.1,212.9L347.6,214.6L341.6,221.1L335.9,223.6L337.4,226.8L332.9,228.5L329.8,233.9L326.4,234.3L318.1,231.5L310.6,231.4L310.6,228.7L305.8,219.3L305.5,211.5L310,210.7L310.1,204.4L313.5,200.5L312.8,194.2L308.3,193L304.9,187.8L301.9,187.2L296.8,180.2L292.3,178.7L288.3,168.4Z","x":320.4,"y":197},{"n":"Teller","d":"M402.6,265.5L434,265.4L434.6,300.9L430.4,300.8L430.1,310.4L444.1,310.6L443.9,330.6L412.3,331.1L412.6,324.3L402.7,324.3Z","x":420.4,"y":299.2},{"n":"Washington","d":"M571.9,180.8L571.6,145.4L595.9,144.9L594.8,97.5L594.9,85.7L603.1,85.6L665.8,83.6L666.1,95.5L665,95.4L666.4,142.8L665.3,142.8L667.1,201.8L630.2,203.2L572.4,204.4Z","x":624,"y":148.3},{"n":"Weld","d":"M439,142.7L439,142.7L439,142.7ZM441.9,11.6L487.6,10.7L533.2,10.2L582.1,9.1L583,49.9L582.3,50.6L582.8,74.2L524.2,75.1L525.3,146.2L489.8,146.7L440.9,147.2L440.8,141.2L436.7,143.7L437.9,146.1L431.2,147.2L430.8,147.1L431,111.7L430.6,99.8L442.1,99.8L441.9,66.3L442.2,54.5Z","x":498.9,"y":71.4},{"n":"Yuma","d":"M665.8,83.6L678,83.2L741.1,80.8L741.5,93.2L743.3,140.2L745.9,198.3L667.1,201.8L665.3,142.8L666.4,142.8L665,95.4L666.1,95.5Z","x":704.7,"y":141.6}];
 const ZIPS={"80001":["Jefferson"],"80002":["Adams","Jefferson"],"80003":["Adams","Jefferson"],"80004":["Jefferson"],"80005":["Jefferson"],"80006":["Jefferson"],"80007":["Jefferson"],"80010":["Adams","Arapahoe","Denver"],"80011":["Adams","Arapahoe"],"80012":["Arapahoe","Denver"],"80013":["Arapahoe"],"80014":["Arapahoe","Denver"],"80015":["Arapahoe"],"80016":["Arapahoe","Douglas"],"80017":["Arapahoe"],"80018":["Arapahoe"],"80019":["Adams","Arapahoe"],"80020":["Adams","Boulder","Jefferson"],"80021":["Boulder","Jefferson"],"80022":["Adams","Denver"],"80023":["Adams"],"80024":["Adams"],"80025":["Boulder"],"80026":["Boulder"],"80027":["Boulder"],"80030":["Adams"],"80031":["Adams","Jefferson"],"80033":["Denver","Jefferson"],"80034":["Jefferson"],"80035":["Adams"],"80036":["Adams"],"80037":["Adams"],"80040":["Adams"],"80041":["Arapahoe"],"80042":["Adams"],"80044":["Arapahoe"],"80045":["Adams","Arapahoe"],"80046":["Arapahoe"],"80047":["Arapahoe"],"80101":["Elbert"],"80102":["Adams","Arapahoe","Elbert"],"80103":["Adams","Arapahoe"],"80104":["Douglas"],"80105":["Adams","Arapahoe","Elbert"],"80106":["Douglas","El Paso","Elbert"],"80107":["Douglas","Elbert"],"80108":["Douglas"],"80109":["Douglas"],"80110":["Arapahoe","Denver"],"80111":["Arapahoe","Denver"],"80112":["Arapahoe","Douglas"],"80113":["Arapahoe","Denver"],"80116":["Douglas","Elbert"],"80117":["Elbert"],"80118":["Douglas","El Paso"],"80120":["Arapahoe"],"80121":["Arapahoe"],"80122":["Arapahoe"],"80123":["Arapahoe","Denver","Jefferson"],"80124":["Douglas"],"80125":["Douglas","Jefferson"],"80126":["Arapahoe","Douglas"],"80127":["Denver","Jefferson"],"80128":["Arapahoe","Jefferson"],"80129":["Arapahoe","Douglas"],"80130":["Douglas"],"80131":["Douglas"],"80132":["El Paso"],"80133":["El Paso"],"80134":["Douglas","Elbert"],"80135":["Douglas","Jefferson","Teller"],"80136":["Adams","Arapahoe"],"80137":["Adams","Arapahoe"],"80138":["Arapahoe","Douglas","Elbert"],"80150":["Arapahoe"],"80151":["Arapahoe"],"80155":["Arapahoe"],"80160":["Arapahoe"],"80161":["Arapahoe"],"80162":["Jefferson"],"80163":["Douglas"],"80165":["Arapahoe"],"80166":["Arapahoe"],"80201":["Denver"],"80202":["Denver"],"80203":["Denver"],"80204":["Denver","Jefferson"],"80205":["Denver"],"80206":["Denver"],"80207":["Denver"],"80208":["Denver"],"80209":["Denver"],"80210":["Arapahoe","Denver"],"80211":["Denver"],"80212":["Adams","Denver","Jefferson"],"80214":["Denver","Jefferson"],"80215":["Jefferson"],"80216":["Adams","Denver"],"80217":["Denver"],"80218":["Denver"],"80219":["Denver"],"80220":["Adams","Arapahoe","Denver"],"80221":["Adams","Denver"],"80222":["Arapahoe","Denver"],"80223":["Denver"],"80224":["Arapahoe","Denver"],"80225":["Jefferson"],"80226":["Denver","Jefferson"],"80227":["Denver","Jefferson"],"80228":["Jefferson"],"80229":["Adams"],"80230":["Arapahoe","Denver"],"80231":["Arapahoe","Denver"],"80232":["Denver","Jefferson"],"80233":["Adams"],"80234":["Adams"],"80235":["Denver","Jefferson"],"80236":["Arapahoe","Denver"],"80237":["Arapahoe","Denver"],"80238":["Adams","Denver"],"80239":["Adams","Denver"],"80241":["Adams"],"80243":["Denver"],"80246":["Arapahoe","Denver"],"80247":["Arapahoe","Denver"],"80248":["Denver"],"80249":["Adams","Denver"],"80250":["Denver"],"80256":["Denver"],"80257":["Denver"],"80259":["Denver"],"80260":["Adams"],"80261":["Denver"],"80263":["Denver"],"80264":["Denver"],"80265":["Denver"],"80266":["Adams","Denver"],"80271":["Denver"],"80273":["Denver"],"80274":["Denver"],"80281":["Denver"],"80290":["Denver"],"80291":["Denver"],"80293":["Denver"],"80294":["Denver"],"80299":["Denver"],"80301":["Boulder"],"80302":["Boulder"],"80303":["Boulder","Jefferson"],"80304":["Boulder"],"80305":["Boulder"],"80306":["Boulder"],"80307":["Boulder"],"80308":["Boulder"],"80309":["Boulder"],"80310":["Boulder"],"80314":["Boulder"],"80401":["Jefferson"],"80402":["Jefferson"],"80403":["Boulder","Gilpin","Jefferson"],"80419":["Jefferson"],"80420":["Park"],"80421":["Jefferson","Park"],"80422":["Boulder","Gilpin"],"80423":["Eagle","Grand"],"80424":["Summit"],"80425":["Jefferson"],"80426":["Eagle"],"80427":["Gilpin"],"80428":["Routt"],"80429":["Lake"],"80430":["Jackson","Larimer"],"80432":["Park"],"80433":["Douglas","Jefferson"],"80434":["Jackson"],"80435":["Summit"],"80436":["Clear Creek"],"80437":["Jefferson"],"80438":["Clear Creek"],"80439":["Clear Creek","Jefferson"],"80440":["Park"],"80442":["Grand"],"80443":["Summit"],"80444":["Clear Creek"],"80446":["Grand"],"80447":["Grand"],"80448":["Park"],"80449":["Park"],"80451":["Grand"],"80452":["Clear Creek"],"80453":["Jefferson"],"80454":["Jefferson"],"80455":["Boulder"],"80456":["Park"],"80457":["Jefferson"],"80459":["Grand"],"80461":["Lake"],"80463":["Eagle","Routt"],"80465":["Jefferson"],"80466":["Boulder"],"80467":["Routt"],"80468":["Grand"],"80469":["Routt"],"80470":["Jefferson","Park"],"80471":["Boulder"],"80473":["Jackson"],"80474":["Gilpin"],"80475":["Park"],"80476":["Clear Creek"],"80477":["Routt"],"80478":["Grand"],"80479":["Routt"],"80480":["Jackson"],"80481":["Boulder"],"80482":["Grand"],"80483":["Routt"],"80487":["Routt"],"80497":["Summit"],"80498":["Eagle","Grand","Summit"],"80501":["Boulder"],"80502":["Boulder"],"80503":["Boulder","Larimer"],"80504":["Boulder","Larimer","Weld"],"80510":["Boulder","Larimer"],"80511":["Larimer"],"80512":["Larimer"],"80513":["Boulder","Larimer","Weld"],"80514":["Weld"],"80515":["Larimer"],"80516":["Boulder","Weld"],"80517":["Larimer"],"80520":["Weld"],"80521":["Larimer"],"80522":["Larimer"],"80523":["Larimer"],"80524":["Larimer","Weld"],"80525":["Larimer"],"80526":["Larimer"],"80527":["Larimer"],"80528":["Larimer"],"80530":["Weld"],"80532":["Larimer"],"80533":["Boulder"],"80534":["Larimer","Weld"],"80535":["Larimer"],"80536":["Larimer"],"80537":["Larimer","Weld"],"80538":["Larimer"],"80539":["Larimer"],"80540":["Boulder","Larimer"],"80541":["Larimer"],"80542":["Weld"],"80543":["Weld"],"80544":["Boulder"],"80545":["Larimer"],"80546":["Weld"],"80547":["Larimer"],"80549":["Larimer","Weld"],"80550":["Larimer","Weld"],"80551":["Weld"],"80553":["Larimer"],"80601":["Adams","Weld"],"80602":["Adams","Weld"],"80603":["Adams","Weld"],"80610":["Weld"],"80611":["Weld"],"80612":["Larimer","Weld"],"80614":["Adams"],"80615":["Weld"],"80620":["Weld"],"80621":["Weld"],"80622":["Weld"],"80623":["Weld"],"80624":["Weld"],"80631":["Weld"],"80632":["Weld"],"80633":["Weld"],"80634":["Weld"],"80638":["Weld"],"80639":["Weld"],"80640":["Adams"],"80642":["Adams","Weld"],"80643":["Adams","Weld"],"80644":["Weld"],"80645":["Weld"],"80646":["Weld"],"80648":["Weld"],"80649":["Morgan","Weld"],"80650":["Weld"],"80651":["Weld"],"80652":["Weld"],"80653":["Morgan"],"80654":["Adams","Morgan","Weld"],"80701":["Adams","Morgan"],"80705":["Morgan"],"80720":["Logan","Washington"],"80721":["Phillips","Sedgwick"],"80722":["Logan"],"80723":["Morgan","Washington"],"80726":["Logan"],"80727":["Yuma"],"80728":["Logan"],"80729":["Weld"],"80731":["Logan","Phillips","Sedgwick","Yuma"],"80732":["Weld"],"80733":["Morgan","Washington"],"80734":["Phillips","Yuma"],"80735":["Yuma"],"80736":["Logan"],"80737":["Sedgwick"],"80740":["Washington"],"80741":["Logan","Morgan","Washington","Weld"],"80742":["Morgan","Weld"],"80743":["Washington"],"80744":["Phillips","Sedgwick"],"80745":["Logan","Weld"],"80746":["Phillips"],"80747":["Logan"],"80749":["Sedgwick"],"80750":["Morgan"],"80751":["Logan"],"80754":["Morgan","Weld"],"80755":["Yuma"],"80757":["Washington"],"80758":["Yuma"],"80759":["Washington","Yuma"],"80801":["Washington"],"80802":["Cheyenne"],"80804":["Lincoln"],"80805":["Kit Carson"],"80807":["Kit Carson","Yuma"],"80808":["El Paso","Elbert"],"80809":["El Paso"],"80810":["Cheyenne"],"80812":["Washington","Yuma"],"80813":["Teller"],"80814":["Teller"],"80815":["Kit Carson","Lincoln","Washington"],"80816":["Park","Teller"],"80817":["El Paso","Pueblo"],"80818":["Lincoln","Washington"],"80819":["El Paso","Teller"],"80820":["Park"],"80821":["Lincoln"],"80822":["Yuma"],"80823":["Lincoln"],"80824":["Yuma"],"80825":["Cheyenne"],"80826":["Lincoln"],"80827":["Park","Teller"],"80828":["Elbert","Lincoln"],"80829":["El Paso"],"80830":["Elbert"],"80831":["El Paso","Elbert"],"80832":["El Paso","Elbert","Lincoln"],"80833":["El Paso","Elbert","Lincoln"],"80834":["Kit Carson","Washington"],"80835":["El Paso","Elbert"],"80836":["Kit Carson"],"80840":["El Paso"],"80841":["El Paso"],"80860":["Teller"],"80861":["Kit Carson","Yuma"],"80862":["Cheyenne"],"80863":["El Paso","Teller"],"80864":["El Paso"],"80866":["Teller"],"80901":["El Paso"],"80902":["El Paso"],"80903":["El Paso"],"80904":["El Paso"],"80905":["El Paso"],"80906":["El Paso","Teller"],"80907":["El Paso"],"80908":["El Paso"],"80909":["El Paso"],"80910":["El Paso"],"80911":["El Paso"],"80912":["El Paso"],"80913":["El Paso"],"80914":["El Paso"],"80915":["El Paso"],"80916":["El Paso"],"80917":["El Paso"],"80918":["El Paso"],"80919":["El Paso"],"80920":["El Paso"],"80921":["El Paso"],"80922":["El Paso"],"80923":["El Paso"],"80924":["El Paso"],"80925":["El Paso"],"80926":["El Paso","Fremont"],"80927":["El Paso"],"80928":["El Paso"],"80929":["El Paso"],"80930":["El Paso"],"80931":["El Paso"],"80932":["El Paso"],"80933":["El Paso"],"80934":["El Paso"],"80935":["El Paso"],"80936":["El Paso"],"80937":["El Paso"],"80938":["El Paso"],"80939":["El Paso"],"80941":["El Paso"],"80942":["El Paso"],"80946":["El Paso"],"80947":["El Paso"],"80949":["El Paso"],"80950":["El Paso"],"80951":["El Paso"],"80960":["El Paso"],"80962":["El Paso"],"80970":["El Paso"],"80977":["El Paso"],"80997":["El Paso"],"81001":["Pueblo"],"81002":["Pueblo"],"81003":["Pueblo"],"81004":["Pueblo"],"81005":["Pueblo"],"81006":["Pueblo"],"81007":["Pueblo"],"81008":["El Paso","Pueblo"],"81009":["Pueblo"],"81010":["Pueblo"],"81011":["Pueblo"],"81012":["Pueblo"],"81019":["Pueblo"],"81020":["Las Animas"],"81021":["Kiowa","Lincoln"],"81022":["Pueblo"],"81023":["Pueblo"],"81024":["Las Animas"],"81025":["Pueblo"],"81027":["Las Animas"],"81029":["Baca"],"81030":["Otero"],"81033":["Crowley"],"81034":["Crowley"],"81036":["Cheyenne","Kiowa"],"81039":["Crowley","Las Animas","Otero","Pueblo"],"81040":["Huerfano"],"81041":["Baca","Prowers"],"81043":["Prowers"],"81044":["Bent"],"81045":["Cheyenne","Kiowa","Lincoln"],"81046":["Las Animas"],"81047":["Baca","Kiowa","Prowers"],"81049":["Las Animas"],"81050":["Bent","Otero"],"81052":["Bent","Prowers"],"81054":["Baca","Bent","Las Animas"],"81055":["Huerfano"],"81057":["Bent"],"81058":["Crowley","Otero"],"81059":["Las Animas","Otero"],"81062":["Crowley","Pueblo"],"81063":["Crowley","Lincoln"],"81064":["Baca","Las Animas"],"81067":["Otero"],"81069":["Custer","Huerfano","Pueblo"],"81071":["Kiowa"],"81073":["Baca"],"81076":["Crowley","Lincoln"],"81077":["Otero"],"81081":["Las Animas"],"81082":["Las Animas"],"81084":["Baca"],"81087":["Baca"],"81089":["Huerfano","Las Animas"],"81090":["Baca","Prowers"],"81091":["Las Animas"],"81092":["Bent","Kiowa","Prowers"],"81101":["Alamosa","Conejos","Rio Grande"],"81102":["Alamosa"],"81120":["Conejos"],"81121":["Archuleta"],"81122":["Archuleta","La Plata"],"81123":["Alamosa","Costilla"],"81124":["Conejos"],"81125":["Alamosa","Rio Grande","Saguache"],"81126":["Costilla"],"81128":["Archuleta"],"81129":["Conejos"],"81130":["Hinsdale","Mineral"],"81131":["Saguache"],"81132":["Rio Grande","Saguache"],"81133":["Costilla"],"81135":["Rio Grande"],"81136":["Alamosa","Saguache"],"81137":["Archuleta","La Plata"],"81138":["Costilla"],"81140":["Conejos","Rio Grande"],"81141":["Conejos"],"81143":["Saguache"],"81144":["Alamosa","Rio Grande"],"81146":["Alamosa"],"81147":["Archuleta","Hinsdale"],"81148":["Conejos"],"81149":["Saguache"],"81151":["Conejos","Costilla"],"81152":["Costilla"],"81154":["Mineral","Rio Grande"],"81155":["Saguache"],"81157":["Archuleta"],"81201":["Chaffee","Fremont"],"81210":["Gunnison"],"81211":["Chaffee"],"81212":["Fremont"],"81215":["Fremont"],"81220":["Gunnison","Montrose"],"81221":["Fremont"],"81222":["Fremont"],"81223":["Custer","Fremont"],"81224":["Gunnison"],"81225":["Gunnison"],"81226":["Custer","Fremont"],"81227":["Chaffee"],"81228":["Chaffee","Lake"],"81230":["Gunnison","Saguache"],"81231":["Gunnison"],"81232":["Fremont"],"81233":["Fremont"],"81235":["Hinsdale"],"81236":["Chaffee"],"81237":["Gunnison"],"81239":["Gunnison"],"81240":["Fremont"],"81241":["Gunnison"],"81242":["Chaffee"],"81243":["Gunnison"],"81244":["Fremont"],"81248":["Saguache"],"81251":["Lake"],"81252":["Custer","Fremont"],"81253":["Custer","Fremont","Pueblo"],"81290":["Fremont"],"81301":["La Plata","San Juan"],"81302":["La Plata"],"81303":["La Plata"],"81320":["Dolores","Montezuma"],"81321":["Montezuma"],"81323":["Montezuma"],"81324":["Dolores","San Miguel"],"81325":["San Miguel"],"81326":["La Plata"],"81327":["Montezuma"],"81328":["La Plata","Montezuma"],"81329":["La Plata"],"81330":["Montezuma"],"81331":["Dolores","Montezuma"],"81332":["Dolores"],"81334":["Montezuma"],"81335":["Montezuma"],"81401":["Montrose"],"81402":["Montrose"],"81403":["Montrose","Ouray"],"81410":["Delta"],"81411":["Montrose"],"81413":["Delta"],"81414":["Delta"],"81415":["Delta","Montrose"],"81416":["Delta","Montrose"],"81418":["Delta"],"81419":["Delta"],"81420":["Delta"],"81422":["Montrose"],"81423":["Montrose","San Miguel"],"81424":["Montrose"],"81425":["Montrose"],"81426":["San Miguel"],"81427":["Ouray"],"81428":["Delta","Gunnison"],"81429":["Montrose"],"81430":["San Miguel"],"81431":["Montrose"],"81432":["Ouray"],"81433":["San Juan"],"81434":["Delta","Gunnison"],"81435":["San Miguel"],"81501":["Mesa"],"81502":["Mesa"],"81503":["Mesa"],"81504":["Mesa"],"81505":["Mesa"],"81506":["Mesa"],"81507":["Mesa"],"81520":["Mesa"],"81521":["Mesa"],"81522":["Mesa"],"81523":["Mesa"],"81524":["Mesa"],"81525":["Mesa"],"81526":["Mesa"],"81527":["Mesa"],"81601":["Garfield"],"81602":["Garfield"],"81610":["Moffat"],"81611":["Pitkin"],"81612":["Pitkin"],"81615":["Pitkin"],"81620":["Eagle"],"81621":["Eagle","Pitkin"],"81623":["Eagle","Garfield","Gunnison","Pitkin"],"81624":["Mesa"],"81625":["Moffat","Routt"],"81630":["Garfield","Mesa"],"81631":["Eagle"],"81632":["Eagle"],"81633":["Moffat"],"81635":["Garfield","Mesa"],"81637":["Eagle","Garfield"],"81638":["Moffat","Rio Blanco","Routt"],"81639":["Routt"],"81640":["Moffat"],"81641":["Garfield","Moffat","Rio Blanco"],"81642":["Eagle","Pitkin"],"81643":["Mesa"],"81645":["Eagle"],"81646":["Mesa"],"81647":["Garfield"],"81648":["Rio Blanco"],"81649":["Eagle"],"81650":["Garfield","Rio Blanco"],"81652":["Garfield"],"81653":["Moffat"],"81654":["Pitkin"],"81655":["Eagle"],"81656":["Pitkin"],"81657":["Eagle"],"81658":["Eagle"]};
 const AGES=['Prenatal','Birth to 1','1 to 2','2 to 3','3 to 4','4 to 5','5 and older'];
@@ -1190,6 +1365,12 @@ en:{
   doneH:'Request ready', previewLbl:'Prototype: this is the email that would be sent', close:'Close',
   doneMsg:(n,how)=>`In the live version, ${n} would get this request and someone would reach out by ${how}. No message was sent from this prototype.`,
   howWords:{'Phone call':'phone call','Text message':'text message','Email':'email'},
+  openings:'Openings', stEnrolling:'Taking new families', stWaitlist:'Waitlist', stClosed:'Not taking new families right now',
+  stUnknown:'Call to check openings', stMixed:'Depends on the county', confirmed:d=>'Confirmed '+d,
+  hideFull:'Hide programs that are full right now',
+  dlgWait:'This program has a waitlist right now. You can still send your request.',
+  dlgClosed:"This program isn't taking new families right now. You can still send a request, or look at another program.",
+  staffQ:'Work at a PAT or HIPPY program?', staffA:'Update your listing',
 },
 es:{
   proto:'<b>Prototipo para revisión.</b> Hecho por Duke GRC para Parent Possible con la lista de sitios 2025-26. Las solicitudes todavía no se envían.',
@@ -1232,11 +1413,17 @@ es:{
   doneH:'Solicitud lista', previewLbl:'Prototipo: este es el correo que se enviaría', close:'Cerrar',
   doneMsg:(n,how)=>`En la versión final, ${n} recibiría esta solicitud y alguien se comunicaría por ${how}. Este prototipo no envió ningún mensaje.`,
   howWords:{'Phone call':'teléfono','Text message':'mensaje de texto','Email':'correo electrónico'},
+  openings:'Cupo', stEnrolling:'Acepta familias nuevas', stWaitlist:'Lista de espera', stClosed:'No acepta familias nuevas por ahora',
+  stUnknown:'Llame para preguntar si hay cupo', stMixed:'Depende del condado', confirmed:d=>'Confirmado el '+d,
+  hideFull:'Ocultar los programas que no tienen cupo por ahora',
+  dlgWait:'Este programa tiene lista de espera por ahora. Aun así puede enviar su solicitud.',
+  dlgClosed:'Este programa no acepta familias nuevas por ahora. Aun así puede enviar una solicitud o ver otro programa.',
+  staffQ:'¿Trabaja en un programa PAT o HIPPY?', staffA:'Actualice la información de su programa',
   langNames:{English:'Inglés',Spanish:'Español',Arabic:'Árabe',Burmese:'Birmano',Dari:'Darí',Farsi:'Farsi',French:'Francés',Hindi:'Hindi',Nepali:'Nepalí',Oromo:'Oromo',Pashto:'Pastún',Punjabi:'Panyabí',Swahili:'Suajili',Vietnamese:'Vietnamita'},
 }};
 
 const $=s=>document.querySelector(s);
-const state={county:'',progs:new Set(['PAT','HIPPY']),age:'',lang:''};
+const state={county:'',progs:new Set(['PAT','HIPPY']),age:'',lang:'',hideFull:false};
 let L='en';
 const t=k=>T[L][k];
 const langName=l=>(T[L].langNames&&T[L].langNames[l])||l;
@@ -1324,13 +1511,35 @@ $('#zip').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D
 
 function resetAll(){
   zipState=null;$('#zip').value='';renderZip();
-  state.county='';state.age='';state.lang='';state.progs=new Set(['PAT','HIPPY']);
+  state.county='';state.age='';state.lang='';state.hideFull=false;state.progs=new Set(['PAT','HIPPY']);
   $('#county').value='';$('#age').value='';$('#lang').value='';
   document.querySelectorAll('.chip[data-prog]').forEach(b=>b.setAttribute('aria-pressed','true'));render();
 }
 $('#reset').addEventListener('click',resetAll);
 
+// Enrollment to show for a site: the chosen county's answer, or a roll-up of every county when none is chosen.
+// A missing or expired answer is 'unknown' ("call to check"), never 'closed'.
+function enroll(s){
+  if(state.county&&s.counties.includes(state.county))return PP.status(s,state.county);
+  const per=s.counties.map(c=>Object.assign({c},PP.status(s,c)));
+  if(per.every(p=>p.status===per[0].status))return {status:per[0].status,confirmed:per.map(p=>p.confirmed).sort()[0]||''};
+  return {status:'mixed',per};
+}
+const ST_KEY={enrolling:'stEnrolling',waitlist:'stWaitlist',closed:'stClosed',unknown:'stUnknown',mixed:'stMixed'};
+const ST_RANK={enrolling:0,mixed:1,waitlist:2,unknown:3,closed:4};
+const stPill=k=>`<span class="st ${k}">${esc(t(ST_KEY[k]))}</span>`;
+function enrollFact(s){
+  if(!HAS_ENROLL)return '';
+  const en=enroll(s);
+  const body=en.status==='mixed'
+    ?en.per.map(p=>`<div class="percounty"><span>${esc(t('county')(p.c))}</span>${stPill(p.status)}</div>`).join('')
+    :stPill(en.status)+(en.confirmed&&en.status!=='unknown'?` <span class="note">${esc(t('confirmed')(PP.fmtDate(en.confirmed,L==='es'?'es-US':'en-US')))}</span>`:'');
+  return `<dt>${t('openings')}</dt><dd>${body}</dd>`;
+}
+const enrollLine=s=>HAS_ENROLL?`<p class="open">${stPill(enroll(s).status)}</p>`:'';
+
 function matches(s){
+  if(state.hideFull&&enroll(s).status==='closed')return false;
   if(state.county&&!s.counties.includes(state.county))return false;
   if(!state.progs.has(s.program))return false;
   if(state.age!==''&&!s.ages.includes(AGES[+state.age]))return false;
@@ -1342,20 +1551,20 @@ function details(s){
   const ageBar=AGES.map((a,i)=>`<i class="${s.ages.includes(a)?(state.age!==''&&+state.age===i?'hit':'on'):''}"></i>`).join('');
   const web=s.website?`<a href="${esc(s.website)}" target="_blank" rel="noopener">${esc(s.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</a>`:t('notListed');
   return `<dl class="facts">
-      <dt>${t('ages')}</dt><dd><div class="ages" aria-label="${esc(t('ages'))}: ${esc(s.ages.map(a=>t('ageShort')[AGES.indexOf(a)]).join(', '))}">${ageBar}</div><div class="agecap">${t('ageShort').map(a=>`<span>${a}</span>`).join('')}</div></dd>
+      ${enrollFact(s)}<dt>${t('ages')}</dt><dd><div class="ages" aria-label="${esc(t('ages'))}: ${esc(s.ages.map(a=>t('ageShort')[AGES.indexOf(a)]).join(', '))}">${ageBar}</div><div class="agecap">${t('ageShort').map(a=>`<span>${a}</span>`).join('')}</div></dd>
       <dt>${t('langs')}</dt><dd>${esc(s.languages.map(langName).join(', ')||t('notListed'))}</dd>
       <dt>${t('phone')}</dt><dd>${esc(s.phone||t('notListed'))}</dd>
       <dt>${t('website')}</dt><dd>${web}</dd>
     </dl>
     <div class="actions"><button class="btn" data-id="${s.id}">${t('interested')}</button>
-    ${s.email?'':`<span class="note">${t('noEmail')}</span>`}</div>`;
+    ${PP.referralEmail(s)?'':`<span class="note">${t('noEmail')}</span>`}</div>`;
 }
 const badge=s=>`<span class="badge ${s.program}" title="${esc(progName(s.program))}">${s.program}</span>`;
 function card(s){
   return `<article class="card"><div class="top"><div><h3>${esc(s.name)}</h3><p class="where">${esc(t('office')(s.city))} · ${esc(t('serves')(s.counties))}</p></div>${badge(s)}</div>${details(s)}</article>`;
 }
 function row(s){
-  return `<details class="card" data-sid="${s.id}"><summary><div class="sumtext"><h3>${esc(s.name)}</h3><p class="where">${esc(t('office')(s.city))} · ${esc(s.languages.map(langName).join(', '))}</p></div>${badge(s)}<i class="chev" aria-hidden="true"></i></summary><div class="body"><p class="where" style="margin:0">${esc(t('serves')(s.counties))}</p>${details(s)}</div></details>`;
+  return `<details class="card" data-sid="${s.id}"><summary><div class="sumtext"><h3>${esc(s.name)}</h3><p class="where">${esc(t('office')(s.city))} · ${esc(s.languages.map(langName).join(', '))}</p>${enrollLine(s)}</div>${badge(s)}<i class="chev" aria-hidden="true"></i></summary><div class="body"><p class="where" style="margin:0">${esc(t('serves')(s.counties))}</p>${details(s)}</div></details>`;
 }
 
 function render(){
@@ -1363,8 +1572,10 @@ function render(){
   const open=new Set([...document.querySelectorAll('details[open][data-sid]')].map(d=>d.dataset.sid));
   const list=SITES.filter(matches);
   const c=state.county;
-  $('#reset').disabled=!(c||state.age!==''||state.lang||state.progs.size<2);
+  $('#reset').disabled=!(c||state.age!==''||state.lang||state.hideFull||state.progs.size<2);
+  if(HAS_ENROLL)list.sort((a,b)=>ST_RANK[enroll(a).status]-ST_RANK[enroll(b).status]);
   let html=`<div class="rhead"><h2>${esc(t('resTitle')(c))}</h2><span class="count">${t('count')(list.length)}</span></div>`;
+  if(HAS_ENROLL)html+=`<label class="check hidefull"><input type="checkbox" id="hideFull"${state.hideFull?' checked':''}> <span>${t('hideFull')}</span></label>`;
   if(!list.length){
     html+=`<div class="empty"><h3>${t('emptyH')}</h3><p>${esc(t('emptyP')(c))}</p><p><button class="btn ghost" id="clr2">${t('reset')}</button></p></div>`;
   }else if(list.length<=2){
@@ -1375,6 +1586,11 @@ function render(){
   $('#results').innerHTML=html;
   open.forEach(id=>{const d=document.querySelector(`details[data-sid="${id}"]`);if(d)d.open=true});
 }
+$('#results').addEventListener('change',e=>{
+  if(e.target.id!=='hideFull')return;
+  state.hideFull=e.target.checked;render();
+  const box=$('#hideFull');if(box)box.focus();
+});
 $('#results').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.id==='clr2')return resetAll();
@@ -1416,6 +1632,9 @@ document.querySelectorAll('input[name="who"]').forEach(r=>r.addEventListener('ch
 function setFormTitle(){
   $('#dlgTitle').textContent=t('dlgTitle')(current.name);
   $('#dlgSub').textContent=t('dlgSub')(progName(current.program),current.counties);
+  const st=HAS_ENROLL?enroll(current).status:'';
+  $('#dlgEnroll').hidden=!(st==='waitlist'||st==='closed');
+  $('#dlgEnroll').textContent=st==='waitlist'?t('dlgWait'):st==='closed'?t('dlgClosed'):'';
 }
 function openForm(s,btn){
   current=s;
@@ -1442,10 +1661,12 @@ $('#form').addEventListener('submit',e=>{
   if(errs.length){$('#err').textContent=errs.join(' ');$('#err').hidden=false;return}
   const w=$('#whoWorker').checked;
   const county=state.county||current.counties[0];
+  const to=PP.referralEmail(current);
+  const shown=HAS_ENROLL?PP.status(current,county).status:'unknown';
   // The email goes to program staff, so it stays in English and notes the family's language.
   const lines=[
-    `To: ${current.email||PP_INBOX}`,
-    current.email?`Cc: ${PP_INBOX}`:null,
+    `To: ${to||PP_INBOX}`,
+    to?`Cc: ${PP_INBOX}`:null,
     `Subject: New family interested in ${current.program} (${county} County)`,
     '',
     `Hi ${current.name} team,`,
@@ -1461,10 +1682,11 @@ $('#form').addEventListener('submit',e=>{
     phone?`Phone: ${phone}`:null,
     email?`Email: ${email}`:null,
     `Best time: ${$('#pTime').value}`,
+    shown!=='unknown'?`Finder showed this program as: ${PP.STATUS_LABEL[shown]}`:null,
     w?`Referred by: ${$('#wName').value.trim()||'Not given'}, ${$('#wOrg').value.trim()||'organization not given'}`:null,
     $('#pNote').value.trim()?`Note: ${$('#pNote').value.trim()}`:null,
     '',
-    current.email?'Parent Possible is copied and will check in if there is no follow-up within 3 business days.':'This site has no email on file, so Parent Possible will forward this request to the site.',
+    to?'Parent Possible is copied and will check in if there is no follow-up within 3 business days.':'This site has no working email on file, so Parent Possible will forward this request to the site.',
   ].filter(l=>l!==null);
   $('#preview').textContent=lines.join('\n');
   $('#doneMsg').textContent=t('doneMsg')(current.name,t('howWords')[how]);
@@ -1475,6 +1697,11 @@ $('#form').addEventListener('submit',e=>{
 function postHeight(){try{parent.postMessage({type:'pp-finder-height',height:Math.ceil(document.body.getBoundingClientRect().height)},'*')}catch(e){}}
 new ResizeObserver(postHeight).observe(document.body);
 
+if(PREVIEW){
+  const note=document.createElement('div');note.className='preview-note';
+  note.textContent='Staff preview. This shows unpublished edits saved in this browser. Families do not see them until the site list is published.';
+  document.querySelector('.topline').before(note);
+}
 applyLang(startLang());
 </script>
 

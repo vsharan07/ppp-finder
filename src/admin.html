@@ -1,0 +1,631 @@
+<title>Staff screen | Parent Possible Program Finder</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap">
+<style>
+__BASE_CSS__
+/* Staff screen: four number tiles, then tabs for update requests, needs attention, sites, and publishing. */
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.head nav{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tile{font:inherit;text-align:left;color:var(--ink);background:var(--teal-soft);border:0;border-radius:var(--r);padding:14px 16px;display:grid;gap:2px;cursor:pointer}
+.tile:hover{background:#d5eaec}
+.tile b{font-size:30px;font-weight:800;line-height:1.1;color:var(--teal-deep);font-variant-numeric:tabular-nums}
+.tile span{font-size:14px;line-height:1.35}
+.tile.hot{background:var(--warn-soft)}
+.tile.hot:hover{background:#fbe4da}
+.tile.hot b{color:var(--accent-hover)}
+.tabs{display:flex;gap:4px;box-shadow:inset 0 -2px 0 var(--line);overflow-x:auto;overflow-y:hidden}
+.tabs button{font:inherit;font-weight:600;font-size:15px;white-space:nowrap;border:0;background:transparent;color:var(--muted);padding:10px 14px;border-bottom:3px solid transparent;cursor:pointer}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected="true"]{color:var(--teal-dark);border-bottom-color:var(--accent)}
+.count{display:inline-block;min-width:22px;text-align:center;font-size:12px;font-weight:700;border-radius:999px;padding:1px 7px;margin-left:4px;background:var(--unk-soft);color:var(--unk)}
+.count.hot{background:var(--accent);color:#ffffff}
+.panel{display:grid;gap:16px}
+.intro{color:var(--muted);max-width:78ch;font-size:15px}
+.empty{background:var(--field);border-radius:var(--r);padding:20px;color:var(--muted)}
+.reqtop{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.reqtop h3{font-size:18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tag{font-size:12px;font-weight:700;border-radius:6px;padding:3px 8px;background:var(--wait-soft);color:var(--wait);white-space:nowrap}
+.verify{font-size:14px;border-radius:8px;padding:8px 12px}
+.verify.ok{background:var(--ok-soft);color:var(--ok)}
+.verify.warn{background:var(--wait-soft);color:var(--wait)}
+.quote{margin:0;border-left:3px solid var(--teal);padding:4px 12px;font-size:15px;overflow-wrap:anywhere}
+.pickrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;border-top:1px solid var(--line)}
+.pickrow:first-child{border-top:0}
+.pickrow input{margin-top:15px}
+.pickrow .chg{border-top:0}
+.conflict{font-size:13px;color:var(--shut);background:var(--shut-soft);border-radius:6px;padding:4px 8px;margin:0 0 10px;display:inline-block}
+.group{border:1px solid var(--line);border-radius:var(--r)}
+.group>summary{cursor:pointer;padding:12px 16px;font-weight:700;color:var(--teal-dark);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.group>summary .why{font-weight:400;color:var(--muted);font-size:14px;flex-basis:100%}
+.group[open]>summary{border-bottom:1px solid var(--line)}
+.arow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.5fr) auto;gap:6px 14px;align-items:center;padding:10px 16px;border-top:1px solid var(--line);font-size:15px}
+.arow:first-of-type{border-top:0}
+.arow .nm{font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.arow .tx{color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+.arow .actions{gap:6px;justify-content:flex-end}
+.tools{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.tools .field{flex:1 1 220px}
+.tools .field.slim{flex:0 1 190px}
+.legendrow{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);align-items:center}
+.srow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.6fr) minmax(0,1.1fr) auto;gap:6px 14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);font-size:15px}
+.srow:first-child{border-top:0}
+.srow .nm{font-weight:600}
+.srow .sub{font-size:13px;color:var(--muted);font-weight:400}
+.srow .pills{display:flex;gap:4px;flex-wrap:wrap}
+.srow .em{font-size:14px;overflow-wrap:anywhere}
+.srow .em.none{color:var(--shut);font-weight:600}
+.list{border:1px solid var(--line);border-radius:var(--r)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.dlg{padding:20px;display:grid;gap:16px}
+.dlg section{display:grid;gap:12px}
+.dlg .scope.one{background:var(--warn-soft);color:#8a3a1c}
+.erow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) auto;gap:8px;align-items:center}
+.erow .cn{font-weight:600}
+.steps{margin:0;padding-left:20px;display:grid;gap:6px;max-width:78ch}
+.pubsite{border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;display:grid;gap:4px}
+.pubsite .reqtop h3{font-size:16px}
+.flag{font-size:14px;padding:8px 0;border-top:1px solid var(--line)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.92em;background:var(--field);border-radius:4px;padding:1px 5px}
+@media (max-width:820px){
+  .tiles{grid-template-columns:1fr 1fr}
+  .arow,.srow{grid-template-columns:1fr}
+  .arow .actions{justify-content:flex-start}
+  .erow{grid-template-columns:1fr 1fr}
+}
+</style>
+
+<div class="wrap gutter">
+ <div class="inner">
+  <div class="proto"><b>Prototype for review.</b> In the live version this screen sits behind the Parent Possible staff login. Here, edits and update requests are saved in this browser only, and nothing reaches the finder until the site list is downloaded and published.</div>
+
+  <header class="head">
+    <div>
+      <p class="eyebrow">Parent Possible staff</p>
+      <h1>Program Finder listings</h1>
+    </div>
+    <nav aria-label="Other pages"><a href="index.html">Open the finder</a><a href="update.html">Open the site update form</a></nav>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="t-requests" data-tab="requests" aria-controls="p-requests">Update requests <span class="count" id="c-requests"></span></button>
+    <button role="tab" id="t-attention" data-tab="attention" aria-controls="p-attention">Needs attention <span class="count" id="c-attention"></span></button>
+    <button role="tab" id="t-sites" data-tab="sites" aria-controls="p-sites">Sites <span class="count" id="c-sites"></span></button>
+    <button role="tab" id="t-publish" data-tab="publish" aria-controls="p-publish">Publish <span class="count" id="c-publish"></span></button>
+  </div>
+
+  <section class="panel" id="p-requests" role="tabpanel" aria-labelledby="t-requests"></section>
+  <section class="panel" id="p-attention" role="tabpanel" aria-labelledby="t-attention" hidden></section>
+  <section class="panel" id="p-sites" role="tabpanel" aria-labelledby="t-sites" hidden>
+    <p class="intro">Every PAT and HIPPY listing on the finder. One listing covers one organization and program, and can serve several counties.</p>
+    <div class="tools">
+      <div class="field"><label for="q">Search</label><input id="q" type="search" placeholder="Site, city, or county"></div>
+      <div class="field slim"><label for="qp">Program</label><select id="qp"><option value="">PAT and HIPPY</option><option>PAT</option><option>HIPPY</option></select></div>
+      <button class="btn teal" type="button" id="addSite">Add a site</button>
+    </div>
+    <div class="legendrow"><span>Each county shows its own enrollment:</span><span class="st enrolling">Taking new families</span><span class="st waitlist">Waitlist</span><span class="st closed">Not taking new families</span><span class="st unknown">Not confirmed</span></div>
+    <div class="list" id="siteList"></div>
+  </section>
+  <section class="panel" id="p-publish" role="tabpanel" aria-labelledby="t-publish" hidden></section>
+ </div>
+</div>
+
+<dialog id="ed" aria-labelledby="edTitle">
+  <form class="dlg" id="edForm" novalidate>
+    <div class="reqtop"><h2 id="edTitle"></h2><span id="edBadge"></span></div>
+    <div class="field" id="edProgBox"><label for="e_program">Program</label><select id="e_program"><option>PAT</option><option>HIPPY</option></select></div>
+
+    <section>
+      <h3>Organization details</h3>
+      <p class="scope" id="edScope"></p>
+      <div class="field"><label for="e_name">Program name, as families see it</label><input id="e_name"></div>
+      <div class="row">
+        <div class="field"><label for="e_contactName">Referral contact</label><input id="e_contactName"></div>
+        <div class="field"><label for="e_email">Referral email</label><input id="e_email" type="email"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="e_bounced"> <span>Emails to this address are bouncing. Send family requests to Parent Possible until it's fixed.</span></label>
+      <div class="row">
+        <div class="field"><label for="e_phone">Phone</label><input id="e_phone" type="tel"></div>
+        <div class="field"><label for="e_website">Website</label><input id="e_website"></div>
+      </div>
+      <div class="field"><label for="e_address">Office address</label><input id="e_address"></div>
+      <div class="row">
+        <div class="field"><label for="e_city">Office city</label><input id="e_city"></div>
+        <div class="field"><label for="e_zip">Office ZIP</label><input id="e_zip" maxlength="5" inputmode="numeric"></div>
+      </div>
+      <div class="field"><label for="e_languages">Languages</label><input id="e_languages"><span class="help">Separate with semicolons, for example: English; Spanish</span></div>
+      <div class="field"><span class="lbl" id="eAgeLbl">Ages served</span><div class="chips" id="e_ages" role="group" aria-labelledby="eAgeLbl"></div></div>
+    </section>
+
+    <section>
+      <h3>Enrollment by county</h3>
+      <p class="scope one">Each county is set <b>on its own</b>. Changing one county does not change the others.</p>
+      <div id="e_rows" style="display:grid;gap:8px"></div>
+      <div class="row">
+        <div class="field"><label for="e_addCounty">Add a county</label><select id="e_addCounty"></select></div>
+        <div class="field"><label for="e_all">Set every county to</label><select id="e_all"></select></div>
+      </div>
+    </section>
+
+    <label class="check"><input type="checkbox" id="e_verified"> <span id="e_verifiedLbl"></span></label>
+    <p class="err" id="edErr" hidden role="alert"></p>
+    <div class="actions">
+      <button class="btn" type="submit">Save</button>
+      <button class="btn ghost" type="button" id="edCancel">Cancel</button>
+      <button class="btn ghost danger" type="button" id="edRemove" style="margin-left:auto">Remove this listing</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+__SHARED__
+
+const PUBLISHED=__SITES__;
+const COUNTIES=__COUNTY_NAMES__;
+const DATA_VERSION='__DATA_VERSION__';
+
+const $=s=>document.querySelector(s);
+const esc=PP.esc;
+const TEXT=['name','contactName','email','phone','website','address','city','zip'];
+const STATUS_OPTS=[...PP.STATUSES,'unknown'];
+
+// Staff edits live in a draft saved in this browser until the site list is downloaded and published.
+let draft=PP.read(PP.DRAFT_KEY,null);
+let sites=draft&&Array.isArray(draft.sites)?draft.sites:PP.copy(PUBLISHED);
+let requests=PP.read(PP.REQ_KEY,[]);
+let tab='requests';
+const openGroups=new Set(['email','enroll']);
+
+const byKey=k=>sites.find(s=>s.key===k);
+const pubByKey=k=>PUBLISHED.find(s=>s.key===k);
+const badge=s=>`<span class="badge ${esc(s.program)}">${esc(s.program)}</span>`;
+const updateLink=s=>new URL('update.html?site='+encodeURIComponent(s.key),location.href).href;
+
+// Compare two listings without caring about key order, row numbers, or blank values.
+const isBlank=v=>v===''||v==null||v===false||(Array.isArray(v)&&!v.length)||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
+function canon(v){
+  if(Array.isArray(v))return '['+v.map(canon).join(',')+']';
+  if(v&&typeof v==='object')return '{'+Object.keys(v).sort().filter(k=>k!=='id'&&!isBlank(v[k])).map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
+  return JSON.stringify(v);
+}
+
+function saveSites(){
+  PP.sortSites(sites);
+  const changed=sites.length!==PUBLISHED.length||sites.some(s=>{const p=pubByKey(s.key);return !p||canon(p)!==canon(s)});
+  draft=changed?{base:draft?draft.base:DATA_VERSION,sites}:null;
+  PP.write(PP.DRAFT_KEY,draft);
+  renderAll();
+}
+function saveRequests(){PP.write(PP.REQ_KEY,requests)}
+
+// Everything in the draft that the finder does not show yet, one entry per listing.
+function unpublished(){
+  const out=[];
+  sites.forEach(s=>{
+    const p=pubByKey(s.key);
+    if(!p){out.push({site:s,kind:'added',changes:PP.diff({},s),flags:[]});return}
+    if(canon(p)===canon(s))return;
+    const flags=[];
+    if(!!p.emailBounced!==!!s.emailBounced)flags.push(s.emailBounced?'Referral email marked as bouncing. Family requests go to Parent Possible.':'Referral email no longer marked as bouncing.');
+    if((p.verified||'')!==(s.verified||''))flags.push(s.verified?'Details checked with the site on '+PP.fmtDate(s.verified)+'.':'Details check date cleared.');
+    out.push({site:s,kind:'changed',changes:PP.diff(p,s),flags});
+  });
+  PUBLISHED.forEach(p=>{if(!byKey(p.key))out.push({site:p,kind:'removed',changes:[],flags:[]})});
+  return out;
+}
+
+// What needs a person to look at it, worked out from the list itself.
+function attention(){
+  const g={email:[],enroll:[],soon:[],missing:[],details:[]};
+  let countyGaps=0;
+  sites.forEach(s=>{
+    if(!PP.referralEmail(s))g.email.push({s,text:s.emailBounced?`Emails to ${s.email} are bouncing`:'No email on file'});
+    const never=[],old=[],soon=[];
+    s.counties.forEach(c=>{
+      const st=PP.status(s,c);
+      if(st.status==='unknown')(st.confirmed?old:never).push(c);
+      else{const left=PP.STALE_DAYS-PP.daysSince(st.confirmed);if(left<=PP.DUE_SOON_DAYS)soon.push(`${c} (${left} ${left===1?'day':'days'} left)`)}
+    });
+    countyGaps+=never.length+old.length;
+    if(never.length||old.length)g.enroll.push({s,text:[old.length?'Out of date: '+old.join(', '):'',never.length?'Never confirmed: '+never.join(', '):''].filter(Boolean).join('. ')});
+    if(soon.length)g.soon.push({s,text:soon.join(', ')});
+    const miss=[!s.phone&&'phone',!s.website&&'website',!s.languages.length&&'languages',!s.ages.length&&'ages served'].filter(Boolean);
+    if(miss.length)g.missing.push({s,text:'Missing '+miss.join(', ')});
+    if(PP.daysSince(s.verified)>PP.DETAILS_STALE_DAYS)g.details.push({s,text:s.verified?'Last checked '+PP.fmtDate(s.verified):'Never checked by the site'});
+  });
+  return {g,countyGaps,countyTotal:sites.reduce((n,s)=>n+s.counties.length,0)};
+}
+
+function reminder(s){
+  return `Subject: Please confirm your Program Finder listing
+
+Hi ${s.contactName||s.name+' team'},
+
+Families find ${s.name} through the Parent Possible Program Finder. Could you take two minutes to tell us whether you're taking new families, and check that your contact details are right?
+
+${updateLink(s)}
+
+We ask about once a month so families always see current information. Enrollment answers older than ${PP.STALE_DAYS} days stop showing on the finder.
+
+Thank you,
+Parent Possible`;
+}
+
+/* ---------- Update requests ---------- */
+function senderCheck(r,site){
+  if(r.isNew)return {cls:'warn',text:'This is a request for a new listing. Confirm with the program before approving.'};
+  const dom=((r.by.email||'').split('@')[1]||'').toLowerCase();
+  const host=u=>{try{return new URL(u).hostname.replace(/^www\./,'').toLowerCase()}catch(e){return ''}};
+  const known=[(site.email||'').split('@')[1],host(site.website)].filter(Boolean).map(x=>x.toLowerCase());
+  const ok=dom&&known.some(k=>dom===k||dom.endsWith('.'+k)||k.endsWith('.'+dom));
+  return ok?{cls:'ok',text:`The sender's email matches this listing (${dom}).`}
+    :{cls:'warn',text:`The sender's email (${dom||'none given'}) doesn't match the email or website on this listing. Confirm who sent this before approving.`};
+}
+function conflict(ch,site){
+  if(!site)return '';
+  if(ch.field==='enrollment'){
+    if(!site.counties.includes(ch.county))return '';
+    const now=PP.status(site,ch.county).status;
+    return now===ch.from?'':`Changed since this was sent. The listing now says: ${PP.STATUS_LABEL[now]}`;
+  }
+  const blank=Array.isArray(ch.from)?[]:'';
+  const now=site[ch.field]==null?blank:site[ch.field];
+  return PP.same(now,ch.from)?'':`Changed since this was sent. The listing now says: ${PP.show(now)}`;
+}
+function requestCard(r){
+  const site=r.isNew?null:byKey(r.siteKey);
+  const gone=!r.isNew&&!site;
+  const scopeSite=r.isNew?{counties:[]}:(site||{counties:r.counties||[]});
+  const check=gone?{cls:'warn',text:'This listing is no longer on the list, so this request can only be rejected.'}:senderCheck(r,site);
+  const rows=r.changes.map((ch,i)=>{
+    const c=conflict(ch,site);
+    return `<div class="pickrow"><input type="checkbox" data-i="${i}" checked aria-label="Accept: ${esc(PP.label(ch))}${ch.county?' in '+esc(ch.county)+' County':''}"${gone?' disabled':''}><div>${PP.changeRow(ch,scopeSite)}${c?`<p class="conflict">${esc(c)}</p>`:''}</div></div>`;
+  }).join('');
+  const all=r.confirmAll?`<div class="pickrow"><input type="checkbox" data-i="all" checked aria-label="Accept: whole listing checked"${gone?' disabled':''}><div><div class="chg"><span class="what">Whole listing checked</span><span class="where">Whole listing</span><span class="ft">The sender says everything on the listing is correct. Approving records ${esc(PP.fmtDate(r.date))} as the date the details were last checked.</span></div></div></div>`:'';
+  return `<article class="card" data-req="${esc(r.id)}">
+    <div class="reqtop"><div><h3>${esc(r.siteName)} ${badge(r)}</h3>
+      <p class="note">Sent ${esc(PP.fmtDate(r.date))} by ${esc(r.by.name)}${r.by.role?', '+esc(r.by.role):''} · ${esc(r.by.email)}</p></div>
+      <div class="chips">${r.isNew?'<span class="tag">New listing</span>':''}${r.sample?'<span class="tag">Sample</span>':''}</div></div>
+    <p class="verify ${check.cls}">${esc(check.text)}</p>
+    ${r.note?`<blockquote class="quote">${esc(r.note)}</blockquote>`:''}
+    <div>${rows+all||'<p class="note">This request has a note but no changes to the listing.</p>'}</div>
+    <div class="actions">
+      <button class="btn" type="button" data-act="approve"${gone?' disabled':''}>${rows+all?'Approve ticked changes':'Mark as handled'}</button>
+      <button class="btn ghost" type="button" data-act="reject">Reject</button>
+      <span class="note">Approved changes go into your unpublished edits. Untick anything you don't want.</span>
+    </div>
+  </article>`;
+}
+function renderRequests(){
+  const waiting=requests.filter(r=>r.state==='pending'),handled=requests.filter(r=>r.state!=='pending');
+  $('#p-requests').innerHTML=`
+    <p class="intro">Sites send these from the <a href="update.html">update form</a>. Nothing a site sends reaches the finder until someone here approves it. Each change shows how far it reaches: every county the site serves, or one county only.</p>
+    ${waiting.length?waiting.map(requestCard).join(''):'<div class="empty">No update requests are waiting.</div>'}
+    <details class="group"><summary>Add a request from an update code</summary>
+      <div style="padding:14px 16px;display:grid;gap:10px">
+        <p class="note">Prototype only. In the live version requests arrive here on their own. For now, a site can copy an update code from the form and email it, and you paste it here.</p>
+        <textarea id="code" aria-label="Update code" placeholder="PP-UPDATE:..."></textarea>
+        <div class="actions"><button class="btn teal" type="button" id="codeAdd">Add request</button></div>
+      </div></details>
+    ${handled.length?`<details class="group"><summary>Handled requests <span class="count">${handled.length}</span></summary>
+      ${handled.slice().reverse().map(r=>`<div class="arow"><span class="nm">${esc(r.siteName)} ${badge(r)}</span>
+        <span class="tx">${r.state==='approved'?`Approved ${esc(PP.fmtDate(r.handled))}, ${r.accepted} of ${r.total} changes accepted`:`Rejected ${esc(PP.fmtDate(r.handled))}`} · sent by ${esc(r.by.name)}</span>
+        <span class="actions">${r.state==='rejected'?`<button class="btn ghost small" type="button" data-reopen="${esc(r.id)}">Reopen</button>`:''}<button class="btn ghost small" type="button" data-forget="${esc(r.id)}">Delete</button></span></div>`).join('')}
+      </details>`:''}`;
+}
+function uniqueKey(k){let out=k,n=2;while(byKey(out)||pubByKey(out))out=k+'-'+n++;return out}
+function approve(r,card){
+  const picked=new Set([...card.querySelectorAll('input[data-i]:checked')].map(i=>i.dataset.i));
+  const total=r.changes.length+(r.confirmAll?1:0);
+  if(total&&!picked.size){PP.toast('Tick at least one change, or reject the request.');return}
+  let site=r.isNew?{program:r.program,name:'',address:'',city:'',zip:'',phone:'',website:'',email:'',ages:[],languages:[],counties:[]}:byKey(r.siteKey);
+  if(!site)return;
+  // Organization details first, then enrollment, so a new county exists before its enrollment is set.
+  r.changes.forEach((ch,i)=>{if(picked.has(String(i))&&ch.field!=='enrollment')PP.apply(site,ch,r.date)});
+  r.changes.forEach((ch,i)=>{if(picked.has(String(i))&&ch.field==='enrollment'&&site.counties.includes(ch.county))PP.apply(site,ch,r.date)});
+  if(r.isNew){
+    if(!site.name||!site.counties.length){PP.toast('A new listing needs a name and at least one county.');return}
+    site.key=uniqueKey(PP.slug(site.program+' '+site.name));r.siteKey=site.key;sites.push(site);
+  }
+  if(r.confirmAll&&picked.has('all'))site.verified=r.date;
+  Object.assign(r,{state:'approved',handled:PP.today(),accepted:picked.size,total});
+  saveRequests();saveSites();
+  PP.toast(total?'Approved. Publish to show it on the finder.':'Marked as handled.');
+}
+$('#p-requests').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const card=b.closest('[data-req]');
+  if(card){
+    const r=requests.find(x=>x.id===card.dataset.req);
+    if(b.dataset.act==='approve')approve(r,card);
+    if(b.dataset.act==='reject'){Object.assign(r,{state:'rejected',handled:PP.today()});saveRequests();renderAll();PP.toast('Rejected. You can reopen it under Handled requests.')}
+    return;
+  }
+  if(b.dataset.reopen){const r=requests.find(x=>x.id===b.dataset.reopen);r.state='pending';saveRequests();renderAll()}
+  if(b.dataset.forget){requests=requests.filter(x=>x.id!==b.dataset.forget);saveRequests();renderAll()}
+  if(b.id==='codeAdd'){
+    const r=PP.decode($('#code').value);
+    const fine=r&&typeof r.id==='string'&&Array.isArray(r.changes)&&r.by&&typeof r.siteName==='string'&&(r.program==='PAT'||r.program==='HIPPY');
+    if(!fine){PP.toast("That doesn't look like an update code.");return}
+    if(requests.some(x=>x.id===r.id)){PP.toast('That request is already here.');return}
+    // Keep only the kinds of change this screen knows how to apply.
+    r.changes=r.changes.filter(c=>c&&(c.field==='enrollment'?STATUS_OPTS.includes(c.to)&&COUNTIES.includes(c.county):c.field in PP.FIELDS));
+    r.state='pending';requests.push(r);saveRequests();renderAll();PP.toast('Request added.');
+  }
+});
+
+/* ---------- Needs attention ---------- */
+const GROUPS=[
+  ['email','No working referral email',"Family requests for these sites can't be emailed to the site, so they come to Parent Possible to forward. Fix these first."],
+  ['enroll','Enrollment needs confirming',`Never confirmed, or the last answer is more than ${PP.STALE_DAYS} days old. The finder shows these counties as "Call to check openings", never as closed.`],
+  ['soon','Enrollment answer expires soon',`These answers stop showing within ${PP.DUE_SOON_DAYS} days unless the site confirms again.`],
+  ['missing','Missing details','A phone number, website, language list, or age range is blank.'],
+  ['details','Details not checked recently',`The site has not confirmed its whole listing in the last ${PP.DETAILS_STALE_DAYS} days.`],
+];
+function renderAttention(a){
+  $('#p-attention').innerHTML=`<p class="intro">Worked out from the site list each time this screen opens, so nothing here has to be tracked by hand. Copy a reminder to email a site its own update link.</p>`
+    +GROUPS.map(([id,title,why])=>{
+      const rows=a.g[id];
+      return `<details class="group" data-group="${id}"${openGroups.has(id)?' open':''}><summary>${title} <span class="count${rows.length&&id==='email'?' hot':''}">${rows.length}</span><span class="why">${why}</span></summary>
+        ${rows.length?rows.map(({s,text})=>`<div class="arow"><span class="nm">${esc(s.name)} ${badge(s)}</span><span class="tx">${esc(text)}</span>
+          <span class="actions"><button class="btn ghost small" type="button" data-edit="${esc(s.key)}">Edit</button><button class="btn ghost small" type="button" data-link="${esc(s.key)}">Copy link</button><button class="btn ghost small" type="button" data-remind="${esc(s.key)}">Copy reminder</button></span></div>`).join('')
+        :'<div class="arow"><span class="tx">Nothing here.</span></div>'}</details>`;
+    }).join('');
+  document.querySelectorAll('#p-attention details').forEach(d=>d.addEventListener('toggle',()=>{d.open?openGroups.add(d.dataset.group):openGroups.delete(d.dataset.group)}));
+}
+$('#p-attention').addEventListener('click',async e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.edit)openEditor(byKey(b.dataset.edit));
+  if(b.dataset.link)PP.toast(await PP.clip(updateLink(byKey(b.dataset.link)))?'Update link copied':'Could not copy');
+  if(b.dataset.remind)PP.toast(await PP.clip(reminder(byKey(b.dataset.remind)))?'Reminder email copied':'Could not copy');
+});
+
+/* ---------- Sites ---------- */
+function pill(s,c){
+  const st=PP.status(s,c);
+  const tip=PP.STATUS_LABEL[st.status]+(st.confirmed?(st.was?`. Last answer (${PP.STATUS_LABEL[st.was].toLowerCase()}) expired, from ${PP.fmtDate(st.confirmed)}`:', confirmed '+PP.fmtDate(st.confirmed)):'');
+  return `<span class="st ${st.status}" title="${esc(tip)}">${esc(c)}<span class="sr">: ${esc(tip)}</span></span>`;
+}
+function renderSites(){
+  const q=$('#q').value.trim().toLowerCase(),p=$('#qp').value;
+  const list=sites.filter(s=>(!p||s.program===p)&&(!q||[s.name,s.city,...s.counties].join(' ').toLowerCase().includes(q)));
+  $('#siteList').innerHTML=list.map(s=>{
+    const mail=PP.referralEmail(s);
+    return `<div class="srow"><div class="nm">${esc(s.name)} ${badge(s)}<div class="sub">Office in ${esc(s.city||'unknown')}${s.contactName?' · '+esc(s.contactName):''}</div></div>
+      <div class="pills">${s.counties.map(c=>pill(s,c)).join('')}</div>
+      <div class="em${mail?'':' none'}">${mail?esc(mail):s.emailBounced?'Email bouncing':'No referral email'}</div>
+      <div><button class="btn ghost small" type="button" data-edit="${esc(s.key)}">Edit</button></div></div>`;
+  }).join('')||'<div class="srow"><span class="tx">No sites match.</span></div>';
+}
+$('#q').addEventListener('input',renderSites);
+$('#qp').addEventListener('change',renderSites);
+$('#siteList').addEventListener('click',e=>{const b=e.target.closest('[data-edit]');if(b)openEditor(byKey(b.dataset.edit))});
+$('#addSite').addEventListener('click',()=>openEditor(null));
+
+// The editor keeps organization details and per-county enrollment in separate blocks so the reach of an edit is clear.
+let ed=null,edIsNew=false;
+const dlg=$('#ed');
+function openEditor(s){
+  edIsNew=!s;
+  ed=PP.copy(s||{program:'PAT',name:'',address:'',city:'',zip:'',phone:'',website:'',email:'',ages:[],languages:[],counties:[]});
+  ed.enrollment=ed.enrollment||{};
+  $('#edTitle').textContent=edIsNew?'Add a site':ed.name;
+  $('#edBadge').innerHTML=edIsNew?'':badge(ed);
+  $('#edProgBox').hidden=!edIsNew;$('#e_program').value=ed.program;
+  $('#edRemove').hidden=edIsNew;$('#edErr').hidden=true;
+  TEXT.forEach(f=>{$('#e_'+f).value=ed[f]||''});
+  $('#e_languages').value=ed.languages.join('; ');
+  $('#e_bounced').checked=!!ed.emailBounced;
+  $('#e_verified').checked=false;
+  $('#e_verifiedLbl').textContent='I checked these details with the site today.'+(ed.verified?' Last checked '+PP.fmtDate(ed.verified)+'.':' Never checked so far.');
+  const all=$('#e_all');all.innerHTML='';all.append(new Option('Choose a status',''));
+  STATUS_OPTS.forEach(v=>all.append(new Option(PP.STATUS_LABEL[v],v)));
+  renderEditor();
+  dlg.showModal();
+}
+function renderEditor(){
+  const n=ed.counties.length;
+  $('#edScope').innerHTML=n>1?`These belong to the whole organization. A change here shows in <b>all ${n} counties</b> this site serves: ${esc(ed.counties.join(', '))}.`:'These belong to the whole organization and show everywhere this site is listed.';
+  $('#e_ages').innerHTML=PP.AGES.map(a=>`<button type="button" class="chip" data-v="${esc(a)}" aria-pressed="${ed.ages.includes(a)}">${esc(a)}</button>`).join('');
+  $('#e_rows').innerHTML=ed.counties.map(c=>{
+    const e=ed.enrollment[c]||{},st=PP.STATUSES.includes(e.status)?e.status:'unknown';
+    return `<div class="erow"><span class="cn">${esc(c)} County</span>
+      <select data-c="${esc(c)}" data-k="status" aria-label="Enrollment in ${esc(c)} County">${STATUS_OPTS.map(v=>`<option value="${v}"${v===st?' selected':''}>${PP.STATUS_LABEL[v]}</option>`).join('')}</select>
+      <input type="date" data-c="${esc(c)}" data-k="confirmed" aria-label="Date confirmed for ${esc(c)} County" max="${PP.today()}" value="${esc(e.confirmed||'')}"${st==='unknown'?' disabled':''}>
+      <button type="button" class="btn ghost small danger" data-rm="${esc(c)}" aria-label="Remove ${esc(c)} County">Remove</button></div>`;
+  }).join('')||'<p class="note">No counties yet. Add at least one.</p>';
+  const add=$('#e_addCounty');add.innerHTML='';add.append(new Option('Choose a county',''));
+  COUNTIES.filter(c=>!ed.counties.includes(c)).forEach(c=>add.append(new Option(c+' County',c)));
+  $('#e_all').value='';
+}
+function setStatus(c,v){if(v==='unknown')delete ed.enrollment[c];else ed.enrollment[c]={status:v,confirmed:PP.today()}}
+$('#e_rows').addEventListener('change',e=>{
+  const c=e.target.dataset.c;if(!c)return;
+  if(e.target.dataset.k==='status')setStatus(c,e.target.value);
+  else if(ed.enrollment[c])ed.enrollment[c].confirmed=e.target.value||PP.today();
+  renderEditor();
+});
+$('#e_rows').addEventListener('click',e=>{const c=e.target.dataset.rm;if(c){ed.counties=ed.counties.filter(x=>x!==c);delete ed.enrollment[c];renderEditor()}});
+$('#e_addCounty').addEventListener('change',e=>{if(e.target.value){ed.counties.push(e.target.value);ed.counties.sort();renderEditor()}});
+$('#e_all').addEventListener('change',e=>{if(e.target.value){ed.counties.forEach(c=>setStatus(c,e.target.value));renderEditor()}});
+$('#e_ages').addEventListener('click',e=>{const v=e.target.dataset.v;if(!v)return;const i=ed.ages.indexOf(v);if(i<0)ed.ages.push(v);else ed.ages.splice(i,1);renderEditor()});
+$('#e_email').addEventListener('input',()=>{$('#e_bounced').checked=false});
+$('#edCancel').addEventListener('click',()=>dlg.close());
+$('#edRemove').addEventListener('click',()=>{
+  if(!confirm(`Remove ${ed.name} from the finder? It disappears for families the next time you publish.`))return;
+  sites=sites.filter(s=>s.key!==ed.key);if(draft)draft.sites=sites;
+  dlg.close();saveSites();PP.toast('Listing removed. Undo it on the Publish tab.');
+});
+$('#edForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  TEXT.forEach(f=>{ed[f]=$('#e_'+f).value.replace(/\s+/g,' ').trim()});
+  if(ed.website&&!/^https?:\/\//i.test(ed.website))ed.website='https://'+ed.website;
+  ed.languages=[...new Set($('#e_languages').value.split(/[;,]/).map(l=>l.trim()).filter(Boolean))].sort();
+  ed.ages=PP.AGES.filter(a=>ed.ages.includes(a));
+  const errs=[];
+  if(!ed.name)errs.push('Add a program name.');
+  if(!ed.counties.length)errs.push('Add at least one county.');
+  if(ed.email&&!/^\S+@\S+\.\S+$/.test(ed.email))errs.push("The referral email doesn't look right.");
+  if(ed.zip&&!/^\d{5}$/.test(ed.zip))errs.push('The ZIP should be 5 digits.');
+  if(errs.length){$('#edErr').textContent=errs.join(' ');$('#edErr').hidden=false;return}
+  if($('#e_bounced').checked&&ed.email)ed.emailBounced=true;else delete ed.emailBounced;
+  if($('#e_verified').checked)ed.verified=PP.today();
+  if(!ed.contactName)delete ed.contactName;
+  if(!Object.keys(ed.enrollment).length)delete ed.enrollment;
+  if(edIsNew){ed.program=$('#e_program').value;ed.key=uniqueKey(PP.slug(ed.program+' '+ed.name));sites.push(ed)}
+  else sites[sites.findIndex(s=>s.key===ed.key)]=ed;
+  dlg.close();saveSites();PP.toast('Saved. Publish to show it on the finder.');
+});
+
+/* ---------- Publish ---------- */
+const ORDER=['program','name','address','city','zip','phone','website','email','ages','languages','counties','id','key'];
+function exportSites(){
+  return PP.sortSites(PP.copy(sites)).map(s=>{
+    const o={};
+    ORDER.forEach(k=>{o[k]=s[k]==null?(['ages','languages','counties'].includes(k)?[]:''):s[k]});
+    Object.keys(s).filter(k=>!ORDER.includes(k)&&!isBlank(s[k])).sort().forEach(k=>{o[k]=s[k]});
+    return o;
+  });
+}
+function exportCsv(){
+  const head=['County','Program','Group','Address','City','State','Zipcode','Phone','Website','Email','Referral contact',...PP.AGES,'Languages','Enrollment','Enrollment confirmed','Details checked'];
+  const rows=[head];
+  exportSites().forEach(s=>s.counties.forEach(c=>{
+    const e=(s.enrollment||{})[c]||{};
+    rows.push([c,s.program,s.name,s.address,s.city,'Colorado',s.zip,s.phone,s.website,s.email,s.contactName||'',...PP.AGES.map(a=>s.ages.includes(a)?'x':''),s.languages.join('; '),e.status?PP.STATUS_LABEL[e.status]:'',e.confirmed||'',s.verified||'']);
+  }));
+  return '﻿'+rows.map(r=>r.map(v=>/[",\n]/.test(v)?'"'+String(v).replace(/"/g,'""')+'"':v).join(',')).join('\r\n')+'\r\n';
+}
+function download(name,text,type){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function renderPublish(un){
+  const moved=draft&&draft.base!==DATA_VERSION;
+  $('#p-publish').innerHTML=`
+    <p class="intro">The finder, the update form, and this screen all read one approved list, <code>data/sites.json</code>. Your edits and approved requests collect here until you publish them together.</p>
+    ${moved?'<p class="verify warn">The published list has changed since these edits were started. They are shown here compared with the new list. Check them before publishing.</p>':''}
+    <div class="actions">
+      <a class="btn teal" href="index.html?preview=1" target="_blank" rel="noopener">Preview in the finder</a>
+      <button class="btn" type="button" id="dlJson"${un.length?'':' disabled'}>Download the site list</button>
+      <button class="btn ghost" type="button" id="dlCsv">Download as a spreadsheet</button>
+      <button class="btn ghost danger" type="button" id="discard"${un.length?'':' disabled'}>Discard all unpublished edits</button>
+    </div>
+    <h2>${un.length?`${un.length} ${un.length===1?'listing has':'listings have'} edits the finder doesn't show yet`:'The finder is up to date'}</h2>
+    ${un.map(u=>`<div class="pubsite"><div class="reqtop"><h3>${esc(u.site.name)} ${badge(u.site)}</h3>
+        <div class="chips">${u.kind==='added'?'<span class="tag">New listing</span>':u.kind==='removed'?'<span class="tag">Removed</span>':''}<button class="btn ghost small" type="button" data-undo="${esc(u.site.key)}">Undo</button></div></div>
+        <div>${u.kind==='removed'?'<p class="flag" style="border:0">This listing will be taken off the finder.</p>':u.changes.map(ch=>PP.changeRow(ch,u.site)).join('')}${u.flags.map(f=>`<p class="flag">${esc(f)}</p>`).join('')}</div></div>`).join('')}
+    <h2>How publishing works</h2>
+    <ol class="steps">
+      <li>Download the site list. You get a file called <code>sites.json</code>.</li>
+      <li>Replace <code>data/sites.json</code> in the project with it, then run <code>python3 scripts/build.py</code>.</li>
+      <li>Commit and push. The finder updates within a couple of minutes, and this screen clears its saved edits once it sees the new list.</li>
+    </ol>
+    <p class="note">In the live version, one Publish button does these three steps.</p>
+    <details class="group"><summary>Demo tools</summary>
+      <div style="padding:14px 16px;display:grid;gap:10px">
+        <p class="note">The real site list has no enrollment answers yet, so every county starts as "Not confirmed". Sample data fills in made-up enrollment answers and three made-up update requests, in this browser only, so the whole workflow can be shown.</p>
+        <div class="actions"><button class="btn ghost" type="button" id="sample">Load sample data</button><button class="btn ghost danger" type="button" id="wipe">Clear everything saved in this browser</button></div>
+      </div></details>`;
+}
+$('#p-publish').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.id==='dlJson')download('sites.json',JSON.stringify(exportSites(),null,1)+'\n','application/json');
+  if(b.id==='dlCsv')download('program-finder-sites.csv',exportCsv(),'text/csv');
+  if(b.id==='discard'&&confirm('Discard every unpublished edit and go back to the published list? Update requests are kept.')){sites=PP.copy(PUBLISHED);draft=null;saveSites()}
+  if(b.dataset.undo){
+    const k=b.dataset.undo,p=pubByKey(k),i=sites.findIndex(s=>s.key===k);
+    if(p&&i>=0)sites[i]=PP.copy(p);else if(p)sites.push(PP.copy(p));else sites.splice(i,1);
+    saveSites();PP.toast('Edit undone.');
+  }
+  if(b.id==='sample')loadSample();
+  if(b.id==='wipe'&&confirm('Clear all unpublished edits and all update requests saved in this browser?')){sites=PP.copy(PUBLISHED);draft=null;requests=[];saveRequests();saveSites()}
+});
+
+// Made-up enrollment answers and requests for demos. Dates are counted back from today so the mix always looks the same.
+function loadSample(){
+  if(draft&&!confirm('This replaces your unpublished edits with sample data. Continue?'))return;
+  sites=PP.copy(PUBLISHED);draft=null;
+  const pattern=['enrolling','enrolling','waitlist','enrolling','closed','enrolling'];
+  sites.forEach((s,i)=>{
+    if(i%6===5)return;                        // some sites have never answered
+    s.enrollment={};
+    s.counties.forEach((c,j)=>{
+      const k=(i+j)%6;
+      const age=k===5?PP.STALE_DAYS+16:k===3?PP.STALE_DAYS-4:3+((i*7+j*5)%24);   // one in six expired, one in six about to expire
+      s.enrollment[c]={status:pattern[k],confirmed:PP.daysAgo(age)};
+    });
+    if(i%3===0)s.verified=PP.daysAgo(20+i);
+  });
+  const mk=(site,by,note,confirmAll,changes,extra)=>Object.assign({id:'sample'+Math.random().toString(36).slice(2,8),sample:true,submitted:new Date().toISOString(),date:PP.today(),
+    siteKey:site.key||null,isNew:!site.key,program:site.program,siteName:site.name,counties:site.counties,by,note,confirmAll,changes,state:'pending'},extra);
+  const enr=(s,c,to)=>({field:'enrollment',county:c,from:PP.status(s,c).status,to});
+  const out=[];
+  const a=sites.find(s=>s.counties.length>=3&&s.email);
+  if(a){
+    // One answer that repeats what the listing says, and two that change it.
+    const dom=a.email.split('@')[1],[c1,c2,c3]=a.counties,now=c=>PP.status(a,c).status;
+    const full=now(c3)==='closed'?c2:c3,other=full===c3?c2:c3;
+    out.push(mk(a,{name:'Sample Coordinator',email:'sample.coordinator@'+dom,role:'Program coordinator'},`We are full in ${full} County until January.`,true,
+      [{field:'phone',from:a.phone,to:'(719) 555-0142'},enr(a,c1,now(c1)==='unknown'?'enrolling':now(c1)),enr(a,other,now(other)==='waitlist'?'enrolling':'waitlist'),enr(a,full,'closed')]));
+  }
+  const b=sites.find(s=>!s.email&&s.counties.length===1);
+  if(b){
+    const langs=[...new Set([...b.languages,'Spanish'])].sort();
+    out.push(mk(b,{name:'Sample Sender',email:'sample.sender@example.com',role:''},'Please send family requests to our shared inbox from now on.',false,
+      [{field:'contactName',from:b.contactName||'',to:'Sample Contact'},{field:'email',from:'',to:'referrals@example.org'},
+       ...(PP.same(langs,b.languages)?[]:[{field:'languages',from:b.languages,to:langs}]),enr(b,b.counties[0],'enrolling')]));
+  }
+  const fresh={program:'PAT',name:'Sample Family Resource Center',contactName:'Sample Contact',email:'hello@example.org',phone:'(719) 555-0100',website:'https://example.org',
+    address:'100 Sample Street',city:'Lamar',zip:'81052',languages:['English','Spanish'],ages:PP.AGES.slice(0,4),counties:['Prowers']};
+  out.push(mk(fresh,{name:'Sample Director',email:'director@example.org',role:'Director'},'We started offering PAT this fall and would like to be listed.',false,
+    [...PP.diff({},fresh),{field:'enrollment',county:'Prowers',from:'unknown',to:'enrolling'}]));
+  requests=requests.filter(r=>!r.sample).concat(out);
+  saveRequests();saveSites();showTab('requests');PP.toast('Sample data loaded in this browser.');
+}
+
+/* ---------- Frame ---------- */
+function showTab(name){
+  tab=name;
+  document.querySelectorAll('.tabs button').forEach(b=>{const on=b.dataset.tab===name;b.setAttribute('aria-selected',on);b.tabIndex=on?0:-1});
+  document.querySelectorAll('.panel').forEach(p=>{p.hidden=p.id!=='p-'+name});
+  try{history.replaceState(null,'','#'+name)}catch(e){}
+}
+document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)showTab(b.dataset.tab)});
+document.querySelector('.tabs').addEventListener('keydown',e=>{
+  if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;
+  const all=[...document.querySelectorAll('.tabs button')],i=all.findIndex(b=>b.dataset.tab===tab);
+  const next=all[(i+(e.key==='ArrowRight'?1:all.length-1))%all.length];showTab(next.dataset.tab);next.focus();
+});
+$('#tiles').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)showTab(b.dataset.tab)});
+
+function renderAll(){
+  const a=attention(),un=unpublished(),waiting=requests.filter(r=>r.state==='pending').length;
+  const tile=(tabName,n,text,hot)=>`<button class="tile${hot&&n?' hot':''}" type="button" data-tab="${tabName}"><b>${n}</b><span>${text}</span></button>`;
+  $('#tiles').innerHTML=tile('requests',waiting,waiting===1?'update request waiting for review':'update requests waiting for review',true)
+    +tile('attention',a.g.email.length,`of ${sites.length} sites have no working referral email`,true)
+    +tile('attention',a.countyGaps,`of ${a.countyTotal} county listings need enrollment confirmed`,false)
+    +tile('publish',un.length,un.length===1?'listing with unpublished edits':'listings with unpublished edits',false);
+  const setCount=(id,n,hot)=>{const el=$('#c-'+id);el.textContent=n;el.classList.toggle('hot',!!(hot&&n))};
+  setCount('requests',waiting,true);
+  setCount('attention',a.g.email.length+a.g.enroll.length+a.g.soon.length+a.g.missing.length);
+  setCount('sites',sites.length);
+  setCount('publish',un.length,true);
+  renderRequests();renderAttention(a);renderSites();renderPublish(un);
+}
+
+// A request sent from the update form in another tab shows up here without reloading.
+window.addEventListener('storage',e=>{if(e.key===PP.REQ_KEY){requests=PP.read(PP.REQ_KEY,[]);renderAll()}});
+
+if(draft){
+  // Once the published list catches up with the saved edits, there is nothing left to keep.
+  const same=sites.length===PUBLISHED.length&&sites.every(s=>{const p=pubByKey(s.key);return p&&canon(p)===canon(s)});
+  if(same){draft=null;PP.write(PP.DRAFT_KEY,null);sites=PP.copy(PUBLISHED)}
+}
+renderAll();
+showTab(['requests','attention','sites','publish'].includes(location.hash.slice(1))?location.hash.slice(1):'requests');
+</script>

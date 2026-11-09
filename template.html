@@ -13,6 +13,7 @@
   --pat:#2e7f86; --pat-soft:#e3f1f2; --hippy:#c4491f; --hippy-soft:#fdebe4;
   --map-empty:#eef2f2; --map-cover:#5fa6ac; --map-sel:#e8603c; --map-stroke:#ffffff;
   --warn-soft:#fdf1ec; --focus:#2e7f86;
+  --ok:#256b43; --ok-soft:#e2f3e8; --wait:#7d5200; --wait-soft:#fcefcf; --shut:#8c342a; --shut-soft:#f8e5e2; --unk:#566163; --unk-soft:#edf1f1;
   --f-display:"Montserrat", "Avenir Next", "Segoe UI", sans-serif;
   --f-body:"Montserrat", "Avenir Next", "Segoe UI", sans-serif;
   --r:10px;
@@ -133,6 +134,19 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
 .privacy b{color:var(--ink)}
 .preview{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}
 .err{color:#b3261e;font-size:13px}
+/* Enrollment status. Shown only once at least one site has confirmed whether it is taking new families. */
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;border-radius:999px;padding:2px 10px}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.st.enrolling{background:var(--ok-soft);color:var(--ok)}
+.st.waitlist{background:var(--wait-soft);color:var(--wait)}
+.st.closed{background:var(--shut-soft);color:var(--shut)}
+.st.unknown{background:var(--unk-soft);color:var(--unk)}
+.st.unknown::before{background:transparent;border:1.5px solid currentColor}
+.st.mixed{background:var(--teal-soft);color:var(--teal-deep)}
+.open{margin:6px 0 0}
+.percounty{display:flex;gap:8px;align-items:center;justify-content:space-between;max-width:340px;padding:2px 0}
+.hidefull{font-size:14px!important;cursor:pointer}
+.preview-note{font-size:14px;background:var(--wait-soft);color:var(--wait);border-radius:var(--r);padding:10px 12px}
 .foot{font-size:13px;color:var(--muted)}
 @media (max-width:980px){.bar{grid-template-columns:1fr 1fr}.bar .resetwrap{grid-column:1/-1}}
 @media (max-width:860px){.main{grid-template-columns:1fr}.side{display:contents}.mapbox{order:1}.zipbox{order:2}.results{order:3}.explain{order:4}}
@@ -204,6 +218,7 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
   </div>
 
   <p class="foot" data-t="foot">Programs are listed by the counties they serve, not by office location. A program's office may be in a nearby town, since home visitors travel to families.</p>
+  <p class="foot"><span data-t="staffQ">Work at a PAT or HIPPY program?</span> <a href="update.html" data-t="staffA">Update your listing</a></p>
  </div>
 </div>
 
@@ -213,6 +228,7 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
       <h2 id="dlgTitle"></h2>
       <p class="note" id="dlgSub" style="margin:4px 0 0"></p>
     </div>
+    <div class="privacy" id="dlgEnroll" hidden></div>
     <fieldset>
       <span class="lbl" data-t="fWho">Who is filling this out?</span>
       <div class="radios">
@@ -263,7 +279,13 @@ dialog::backdrop{background:rgba(10,20,20,.5)}
 </dialog>
 
 <script>
-const SITES=__SITES__;
+__SHARED__
+
+// Staff can open the finder with ?preview=1 to see their unpublished edits (saved in their own browser by admin.html).
+const PREVIEW=new URLSearchParams(location.search).get('preview')==='1'?PP.read(PP.DRAFT_KEY,null):null;
+const SITES=PREVIEW&&Array.isArray(PREVIEW.sites)?PP.sortSites(PREVIEW.sites):__SITES__;
+// Enrollment only shows once at least one site has a current answer, so the page looks the same as before until then.
+const HAS_ENROLL=SITES.some(s=>s.counties.some(c=>PP.status(s,c).status!=='unknown'));
 const MAP=__MAP__;
 const ZIPS=__ZIPS__;
 const AGES=['Prenatal','Birth to 1','1 to 2','2 to 3','3 to 4','4 to 5','5 and older'];
@@ -312,6 +334,12 @@ en:{
   doneH:'Request ready', previewLbl:'Prototype: this is the email that would be sent', close:'Close',
   doneMsg:(n,how)=>`In the live version, ${n} would get this request and someone would reach out by ${how}. No message was sent from this prototype.`,
   howWords:{'Phone call':'phone call','Text message':'text message','Email':'email'},
+  openings:'Openings', stEnrolling:'Taking new families', stWaitlist:'Waitlist', stClosed:'Not taking new families right now',
+  stUnknown:'Call to check openings', stMixed:'Depends on the county', confirmed:d=>'Confirmed '+d,
+  hideFull:'Hide programs that are full right now',
+  dlgWait:'This program has a waitlist right now. You can still send your request.',
+  dlgClosed:"This program isn't taking new families right now. You can still send a request, or look at another program.",
+  staffQ:'Work at a PAT or HIPPY program?', staffA:'Update your listing',
 },
 es:{
   proto:'<b>Prototipo para revisión.</b> Hecho por Duke GRC para Parent Possible con la lista de sitios 2025-26. Las solicitudes todavía no se envían.',
@@ -354,11 +382,17 @@ es:{
   doneH:'Solicitud lista', previewLbl:'Prototipo: este es el correo que se enviaría', close:'Cerrar',
   doneMsg:(n,how)=>`En la versión final, ${n} recibiría esta solicitud y alguien se comunicaría por ${how}. Este prototipo no envió ningún mensaje.`,
   howWords:{'Phone call':'teléfono','Text message':'mensaje de texto','Email':'correo electrónico'},
+  openings:'Cupo', stEnrolling:'Acepta familias nuevas', stWaitlist:'Lista de espera', stClosed:'No acepta familias nuevas por ahora',
+  stUnknown:'Llame para preguntar si hay cupo', stMixed:'Depende del condado', confirmed:d=>'Confirmado el '+d,
+  hideFull:'Ocultar los programas que no tienen cupo por ahora',
+  dlgWait:'Este programa tiene lista de espera por ahora. Aun así puede enviar su solicitud.',
+  dlgClosed:'Este programa no acepta familias nuevas por ahora. Aun así puede enviar una solicitud o ver otro programa.',
+  staffQ:'¿Trabaja en un programa PAT o HIPPY?', staffA:'Actualice la información de su programa',
   langNames:{English:'Inglés',Spanish:'Español',Arabic:'Árabe',Burmese:'Birmano',Dari:'Darí',Farsi:'Farsi',French:'Francés',Hindi:'Hindi',Nepali:'Nepalí',Oromo:'Oromo',Pashto:'Pastún',Punjabi:'Panyabí',Swahili:'Suajili',Vietnamese:'Vietnamita'},
 }};
 
 const $=s=>document.querySelector(s);
-const state={county:'',progs:new Set(['PAT','HIPPY']),age:'',lang:''};
+const state={county:'',progs:new Set(['PAT','HIPPY']),age:'',lang:'',hideFull:false};
 let L='en';
 const t=k=>T[L][k];
 const langName=l=>(T[L].langNames&&T[L].langNames[l])||l;
@@ -446,13 +480,35 @@ $('#zip').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D
 
 function resetAll(){
   zipState=null;$('#zip').value='';renderZip();
-  state.county='';state.age='';state.lang='';state.progs=new Set(['PAT','HIPPY']);
+  state.county='';state.age='';state.lang='';state.hideFull=false;state.progs=new Set(['PAT','HIPPY']);
   $('#county').value='';$('#age').value='';$('#lang').value='';
   document.querySelectorAll('.chip[data-prog]').forEach(b=>b.setAttribute('aria-pressed','true'));render();
 }
 $('#reset').addEventListener('click',resetAll);
 
+// Enrollment to show for a site: the chosen county's answer, or a roll-up of every county when none is chosen.
+// A missing or expired answer is 'unknown' ("call to check"), never 'closed'.
+function enroll(s){
+  if(state.county&&s.counties.includes(state.county))return PP.status(s,state.county);
+  const per=s.counties.map(c=>Object.assign({c},PP.status(s,c)));
+  if(per.every(p=>p.status===per[0].status))return {status:per[0].status,confirmed:per.map(p=>p.confirmed).sort()[0]||''};
+  return {status:'mixed',per};
+}
+const ST_KEY={enrolling:'stEnrolling',waitlist:'stWaitlist',closed:'stClosed',unknown:'stUnknown',mixed:'stMixed'};
+const ST_RANK={enrolling:0,mixed:1,waitlist:2,unknown:3,closed:4};
+const stPill=k=>`<span class="st ${k}">${esc(t(ST_KEY[k]))}</span>`;
+function enrollFact(s){
+  if(!HAS_ENROLL)return '';
+  const en=enroll(s);
+  const body=en.status==='mixed'
+    ?en.per.map(p=>`<div class="percounty"><span>${esc(t('county')(p.c))}</span>${stPill(p.status)}</div>`).join('')
+    :stPill(en.status)+(en.confirmed&&en.status!=='unknown'?` <span class="note">${esc(t('confirmed')(PP.fmtDate(en.confirmed,L==='es'?'es-US':'en-US')))}</span>`:'');
+  return `<dt>${t('openings')}</dt><dd>${body}</dd>`;
+}
+const enrollLine=s=>HAS_ENROLL?`<p class="open">${stPill(enroll(s).status)}</p>`:'';
+
 function matches(s){
+  if(state.hideFull&&enroll(s).status==='closed')return false;
   if(state.county&&!s.counties.includes(state.county))return false;
   if(!state.progs.has(s.program))return false;
   if(state.age!==''&&!s.ages.includes(AGES[+state.age]))return false;
@@ -464,20 +520,20 @@ function details(s){
   const ageBar=AGES.map((a,i)=>`<i class="${s.ages.includes(a)?(state.age!==''&&+state.age===i?'hit':'on'):''}"></i>`).join('');
   const web=s.website?`<a href="${esc(s.website)}" target="_blank" rel="noopener">${esc(s.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</a>`:t('notListed');
   return `<dl class="facts">
-      <dt>${t('ages')}</dt><dd><div class="ages" aria-label="${esc(t('ages'))}: ${esc(s.ages.map(a=>t('ageShort')[AGES.indexOf(a)]).join(', '))}">${ageBar}</div><div class="agecap">${t('ageShort').map(a=>`<span>${a}</span>`).join('')}</div></dd>
+      ${enrollFact(s)}<dt>${t('ages')}</dt><dd><div class="ages" aria-label="${esc(t('ages'))}: ${esc(s.ages.map(a=>t('ageShort')[AGES.indexOf(a)]).join(', '))}">${ageBar}</div><div class="agecap">${t('ageShort').map(a=>`<span>${a}</span>`).join('')}</div></dd>
       <dt>${t('langs')}</dt><dd>${esc(s.languages.map(langName).join(', ')||t('notListed'))}</dd>
       <dt>${t('phone')}</dt><dd>${esc(s.phone||t('notListed'))}</dd>
       <dt>${t('website')}</dt><dd>${web}</dd>
     </dl>
     <div class="actions"><button class="btn" data-id="${s.id}">${t('interested')}</button>
-    ${s.email?'':`<span class="note">${t('noEmail')}</span>`}</div>`;
+    ${PP.referralEmail(s)?'':`<span class="note">${t('noEmail')}</span>`}</div>`;
 }
 const badge=s=>`<span class="badge ${s.program}" title="${esc(progName(s.program))}">${s.program}</span>`;
 function card(s){
   return `<article class="card"><div class="top"><div><h3>${esc(s.name)}</h3><p class="where">${esc(t('office')(s.city))} · ${esc(t('serves')(s.counties))}</p></div>${badge(s)}</div>${details(s)}</article>`;
 }
 function row(s){
-  return `<details class="card" data-sid="${s.id}"><summary><div class="sumtext"><h3>${esc(s.name)}</h3><p class="where">${esc(t('office')(s.city))} · ${esc(s.languages.map(langName).join(', '))}</p></div>${badge(s)}<i class="chev" aria-hidden="true"></i></summary><div class="body"><p class="where" style="margin:0">${esc(t('serves')(s.counties))}</p>${details(s)}</div></details>`;
+  return `<details class="card" data-sid="${s.id}"><summary><div class="sumtext"><h3>${esc(s.name)}</h3><p class="where">${esc(t('office')(s.city))} · ${esc(s.languages.map(langName).join(', '))}</p>${enrollLine(s)}</div>${badge(s)}<i class="chev" aria-hidden="true"></i></summary><div class="body"><p class="where" style="margin:0">${esc(t('serves')(s.counties))}</p>${details(s)}</div></details>`;
 }
 
 function render(){
@@ -485,8 +541,10 @@ function render(){
   const open=new Set([...document.querySelectorAll('details[open][data-sid]')].map(d=>d.dataset.sid));
   const list=SITES.filter(matches);
   const c=state.county;
-  $('#reset').disabled=!(c||state.age!==''||state.lang||state.progs.size<2);
+  $('#reset').disabled=!(c||state.age!==''||state.lang||state.hideFull||state.progs.size<2);
+  if(HAS_ENROLL)list.sort((a,b)=>ST_RANK[enroll(a).status]-ST_RANK[enroll(b).status]);
   let html=`<div class="rhead"><h2>${esc(t('resTitle')(c))}</h2><span class="count">${t('count')(list.length)}</span></div>`;
+  if(HAS_ENROLL)html+=`<label class="check hidefull"><input type="checkbox" id="hideFull"${state.hideFull?' checked':''}> <span>${t('hideFull')}</span></label>`;
   if(!list.length){
     html+=`<div class="empty"><h3>${t('emptyH')}</h3><p>${esc(t('emptyP')(c))}</p><p><button class="btn ghost" id="clr2">${t('reset')}</button></p></div>`;
   }else if(list.length<=2){
@@ -497,6 +555,11 @@ function render(){
   $('#results').innerHTML=html;
   open.forEach(id=>{const d=document.querySelector(`details[data-sid="${id}"]`);if(d)d.open=true});
 }
+$('#results').addEventListener('change',e=>{
+  if(e.target.id!=='hideFull')return;
+  state.hideFull=e.target.checked;render();
+  const box=$('#hideFull');if(box)box.focus();
+});
 $('#results').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.id==='clr2')return resetAll();
@@ -538,6 +601,9 @@ document.querySelectorAll('input[name="who"]').forEach(r=>r.addEventListener('ch
 function setFormTitle(){
   $('#dlgTitle').textContent=t('dlgTitle')(current.name);
   $('#dlgSub').textContent=t('dlgSub')(progName(current.program),current.counties);
+  const st=HAS_ENROLL?enroll(current).status:'';
+  $('#dlgEnroll').hidden=!(st==='waitlist'||st==='closed');
+  $('#dlgEnroll').textContent=st==='waitlist'?t('dlgWait'):st==='closed'?t('dlgClosed'):'';
 }
 function openForm(s,btn){
   current=s;
@@ -564,10 +630,12 @@ $('#form').addEventListener('submit',e=>{
   if(errs.length){$('#err').textContent=errs.join(' ');$('#err').hidden=false;return}
   const w=$('#whoWorker').checked;
   const county=state.county||current.counties[0];
+  const to=PP.referralEmail(current);
+  const shown=HAS_ENROLL?PP.status(current,county).status:'unknown';
   // The email goes to program staff, so it stays in English and notes the family's language.
   const lines=[
-    `To: ${current.email||PP_INBOX}`,
-    current.email?`Cc: ${PP_INBOX}`:null,
+    `To: ${to||PP_INBOX}`,
+    to?`Cc: ${PP_INBOX}`:null,
     `Subject: New family interested in ${current.program} (${county} County)`,
     '',
     `Hi ${current.name} team,`,
@@ -583,10 +651,11 @@ $('#form').addEventListener('submit',e=>{
     phone?`Phone: ${phone}`:null,
     email?`Email: ${email}`:null,
     `Best time: ${$('#pTime').value}`,
+    shown!=='unknown'?`Finder showed this program as: ${PP.STATUS_LABEL[shown]}`:null,
     w?`Referred by: ${$('#wName').value.trim()||'Not given'}, ${$('#wOrg').value.trim()||'organization not given'}`:null,
     $('#pNote').value.trim()?`Note: ${$('#pNote').value.trim()}`:null,
     '',
-    current.email?'Parent Possible is copied and will check in if there is no follow-up within 3 business days.':'This site has no email on file, so Parent Possible will forward this request to the site.',
+    to?'Parent Possible is copied and will check in if there is no follow-up within 3 business days.':'This site has no working email on file, so Parent Possible will forward this request to the site.',
   ].filter(l=>l!==null);
   $('#preview').textContent=lines.join('\n');
   $('#doneMsg').textContent=t('doneMsg')(current.name,t('howWords')[how]);
@@ -597,5 +666,10 @@ $('#form').addEventListener('submit',e=>{
 function postHeight(){try{parent.postMessage({type:'pp-finder-height',height:Math.ceil(document.body.getBoundingClientRect().height)},'*')}catch(e){}}
 new ResizeObserver(postHeight).observe(document.body);
 
+if(PREVIEW){
+  const note=document.createElement('div');note.className='preview-note';
+  note.textContent='Staff preview. This shows unpublished edits saved in this browser. Families do not see them until the site list is published.';
+  document.querySelector('.topline').before(note);
+}
 applyLang(startLang());
 </script>

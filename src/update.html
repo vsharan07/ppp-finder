@@ -1,0 +1,354 @@
+<title>Update your listing | Parent Possible Program Finder</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap">
+<style>
+__BASE_CSS__
+/* Site update form: one column of numbered steps, then a review step, then a confirmation. */
+.head{display:grid;gap:8px}
+.step h2{display:flex;gap:10px;align-items:center}
+.step .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--teal);color:#ffffff;font-size:15px;display:grid;place-items:center}
+.erow{border-top:1px solid var(--line);padding:12px 0 0;display:grid;gap:8px;min-width:0}
+.erow:first-child{border-top:0;padding-top:0}
+.erow .cname{font-weight:700;font-size:16px}
+.erow .last{font-size:13px;color:var(--muted)}
+.ehead{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px}
+.seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.seg label{position:relative;display:block}
+.seg input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.seg span{display:grid;place-items:center;text-align:center;height:100%;min-height:44px;font-size:14px;font-weight:600;line-height:1.25;border:1.5px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--surface)}
+.seg input:focus-visible+span{outline:3px solid var(--focus);outline-offset:2px}
+.seg input:hover+span{background:var(--field)}
+.seg input:checked+span{border-color:currentColor}
+.seg input[value=enrolling]:checked+span{background:var(--ok-soft);color:var(--ok)}
+.seg input[value=waitlist]:checked+span{background:var(--wait-soft);color:var(--wait)}
+.seg input[value=closed]:checked+span{background:var(--shut-soft);color:var(--shut)}
+.seg input[value=unknown]:checked+span{background:var(--unk-soft);color:var(--unk)}
+.bulk{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:14px;background:var(--field);border-radius:8px;padding:10px 12px}
+.addrow{display:flex;gap:8px;flex-wrap:wrap}
+.addrow>*:first-child{flex:1 1 200px}
+.addrow .btn{flex:none}
+.chip.rm{cursor:default;display:inline-flex;align-items:center;gap:6px;padding-right:6px;background:var(--teal-soft);border-color:var(--teal-soft);color:var(--teal-deep);font-weight:600}
+.chip.rm button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer;border-radius:50%;width:24px;height:24px;line-height:1;font-size:16px}
+.chip.rm button:hover{background:#ffffff}
+.who{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.next{margin:0;padding-left:20px;display:grid;gap:6px}
+.preview{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.linkbox{font-size:14px;background:var(--field);border-radius:8px;padding:10px 12px;overflow-wrap:anywhere}
+@media (max-width:560px){.seg{grid-template-columns:1fr 1fr}}
+</style>
+
+<div class="wrap gutter">
+ <div class="inner narrow">
+  <div class="proto"><b>Prototype for review.</b> Updates are not sent anywhere yet. They are saved in this browser so the <a href="admin.html">staff review screen</a> can show them.</div>
+
+  <header class="head">
+    <p class="eyebrow">For PAT and HIPPY program staff</p>
+    <h1>Update your program's listing</h1>
+    <p class="lead">Tell Parent Possible whether you're taking new families, and fix anything that's out of date. It takes about two minutes. Parent Possible reviews every update before it shows on the <a href="index.html">Program Finder</a>.</p>
+  </header>
+
+  <form id="f" novalidate style="display:grid;gap:20px">
+    <section class="card step">
+      <h2><span class="n">1</span> Your program</h2>
+      <div class="field">
+        <label for="site">Which program are you with?</label>
+        <select id="site"></select>
+      </div>
+      <fieldset id="newBox" hidden style="border:0;padding:0;margin:0;display:grid;gap:6px">
+        <span class="lbl">Which program do you offer?</span>
+        <div class="chips">
+          <label class="check"><input type="radio" name="prog" value="PAT" checked> Parents as Teachers (PAT)</label>
+          <label class="check"><input type="radio" name="prog" value="HIPPY"> HIPPY</label>
+        </div>
+        <p class="help">If you offer both, send one update for each.</p>
+      </fieldset>
+    </section>
+
+    <div id="rest" hidden style="display:grid;gap:20px">
+      <section class="card step">
+        <h2><span class="n">2</span> Are you taking new families?</h2>
+        <p class="help" id="enrollHelp"></p>
+        <div class="bulk" id="bulk" hidden>
+          <span>Same answer for every county:</span>
+          <button type="button" class="btn ghost small" data-all="enrolling">Taking new families</button>
+          <button type="button" class="btn ghost small" data-all="waitlist">Waitlist</button>
+          <button type="button" class="btn ghost small" data-all="closed">Not right now</button>
+        </div>
+        <div id="enroll" style="display:grid;gap:12px"></div>
+      </section>
+
+      <section class="card step">
+        <h2><span class="n">3</span> Check your details</h2>
+        <p class="scope" id="scope"></p>
+        <div class="field"><label for="f_name">Program name, as families see it</label><input id="f_name" autocomplete="organization"></div>
+        <div class="row">
+          <div class="field"><label for="f_contactName">Referral contact</label><input id="f_contactName" autocomplete="off"><span class="help">The person who follows up with new families.</span></div>
+          <div class="field"><label for="f_email">Referral email</label><input id="f_email" type="email" autocomplete="off"><span class="help">"I'm interested" requests from families are emailed here.</span></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="f_phone">Phone families can call</label><input id="f_phone" type="tel" autocomplete="off"></div>
+          <div class="field"><label for="f_website">Website</label><input id="f_website" inputmode="url" autocomplete="off"></div>
+        </div>
+        <div class="field"><label for="f_address">Office address</label><input id="f_address" autocomplete="off"></div>
+        <div class="row">
+          <div class="field"><label for="f_city">Office city</label><input id="f_city" autocomplete="off"></div>
+          <div class="field"><label for="f_zip">Office ZIP</label><input id="f_zip" inputmode="numeric" maxlength="5" autocomplete="off"></div>
+        </div>
+
+        <div class="field">
+          <span class="lbl" id="langLbl">Languages your home visitors speak</span>
+          <div class="chips" id="langs" role="group" aria-labelledby="langLbl"></div>
+          <div class="addrow"><input id="langOther" aria-label="Another language" placeholder="Another language"><button type="button" class="btn ghost" id="langAdd">Add</button></div>
+        </div>
+        <div class="field">
+          <span class="lbl" id="ageLbl">Child ages you serve</span>
+          <div class="chips" id="ages" role="group" aria-labelledby="ageLbl"></div>
+        </div>
+        <div class="field">
+          <span class="lbl" id="coLbl">Counties you serve</span>
+          <div class="chips" id="counties" role="group" aria-labelledby="coLbl"></div>
+          <div class="addrow"><select id="coAdd" aria-label="Add a county"></select></div>
+          <span class="help">Families find you by the county they live in, not by your office address.</span>
+        </div>
+      </section>
+
+      <section class="card step">
+        <h2><span class="n">4</span> About you</h2>
+        <p class="help">So Parent Possible knows who sent this and can reach you with questions. This is not shown to families.</p>
+        <div class="row">
+          <div class="field"><label for="byName">Your name</label><input id="byName" autocomplete="name"></div>
+          <div class="field"><label for="byEmail">Your work email</label><input id="byEmail" type="email" autocomplete="email"></div>
+        </div>
+        <div class="field"><label for="byRole">Your role (optional)</label><input id="byRole" autocomplete="organization-title"></div>
+        <div class="field"><label for="note">Anything else Parent Possible should know? (optional)</label><textarea id="note"></textarea></div>
+        <label class="check"><input type="checkbox" id="confirmAll"> <span>I checked the whole listing, and everything on it is correct as of today.</span></label>
+      </section>
+
+      <p class="err" id="err" hidden role="alert"></p>
+      <div class="actions"><button class="btn" type="submit">Review my update</button></div>
+    </div>
+  </form>
+
+  <section class="card" id="review" hidden tabindex="-1">
+    <div>
+      <h2>Check before you send</h2>
+      <p class="help" id="reviewSub" style="margin-top:4px"></p>
+    </div>
+    <div id="reviewList"></div>
+    <div class="actions">
+      <button class="btn" type="button" id="send">Send to Parent Possible</button>
+      <button class="btn ghost" type="button" id="back">Go back and edit</button>
+    </div>
+  </section>
+
+  <section class="card" id="done" hidden tabindex="-1">
+    <h2 id="doneH"></h2>
+    <ol class="next">
+      <li>A Parent Possible staff member reviews your update.</li>
+      <li>Once it's approved, families see it on the Program Finder.</li>
+      <li id="nextAsk"></li>
+    </ol>
+    <div class="linkbox" id="bookmark"></div>
+    <span class="lbl">Prototype: this is the email Parent Possible would get</span>
+    <div class="preview" id="preview"></div>
+    <div class="actions">
+      <button class="btn" type="button" id="again">Update another program</button>
+      <button class="btn ghost" type="button" id="copyCode">Copy update code</button>
+      <span class="note">Prototype only: the code can be pasted into the staff screen on another computer.</span>
+    </div>
+  </section>
+ </div>
+</div>
+
+<script>
+__SHARED__
+
+const SITES=__SITES__;
+const COUNTIES=__COUNTY_NAMES__;
+const DATA_VERSION='__DATA_VERSION__';
+
+const $=s=>document.querySelector(s);
+const esc=PP.esc;
+const TEXT=['name','contactName','email','phone','website','address','city','zip'];
+const BLANK={program:'PAT',name:'',contactName:'',email:'',phone:'',website:'',address:'',city:'',zip:'',languages:[],ages:[],counties:[]};
+const firstTwo=l=>l==='English'?0:l==='Spanish'?1:2;
+const LANGS=[...new Set(SITES.flatMap(s=>s.languages))].sort((a,b)=>firstTwo(a)-firstTwo(b)||a.localeCompare(b));
+const ANSWERS=[['enrolling','Taking new families'],['waitlist','Waitlist'],['closed','Not right now'],['unknown','Not sure']];
+
+let base=null;     // the listing as it is published today (blank for a new listing)
+let isNew=false;
+let work=null;     // the lists being edited: languages, ages, counties
+let answers={};    // county -> enrollment answer
+let request=null;  // the update, built at the review step
+
+// Step 1: pick the program. A link like update.html?site=<key> skips this step.
+(function fillSites(){
+  const sel=$('#site');
+  sel.append(new Option('Choose your program',''));
+  [['PAT','Parents as Teachers (PAT)'],['HIPPY','HIPPY']].forEach(([p,label])=>{
+    const g=document.createElement('optgroup');g.label=label;
+    SITES.filter(s=>s.program===p).forEach(s=>g.append(new Option(`${s.name} (${s.city})`,s.key)));
+    sel.append(g);
+  });
+  sel.append(new Option('My program is not on this list','__new'));
+  sel.addEventListener('change',()=>pick(sel.value));
+})();
+
+function pick(v){
+  isNew=v==='__new';
+  const s=SITES.find(x=>x.key===v);
+  $('#rest').hidden=!(s||isNew);$('#newBox').hidden=!isNew;$('#err').hidden=true;
+  if(!s&&!isNew){base=null;return}
+  base=PP.copy(s||BLANK);
+  work={languages:[...base.languages],ages:[...base.ages],counties:[...base.counties]};
+  answers={};
+  base.counties.forEach(c=>{const st=PP.status(base,c).status;if(st!=='unknown')answers[c]=st});
+  TEXT.forEach(f=>{$('#f_'+f).value=base[f]||''});
+  $('#confirmAll').checked=false;
+  renderLists();
+}
+
+function renderEnroll(){
+  const n=work.counties.length;
+  $('#enrollHelp').textContent=`Families see your answer on the finder. If Parent Possible hasn't heard from you in ${PP.STALE_DAYS} days, the finder shows "Call to check openings" instead. It never marks you as closed on its own.`;
+  $('#bulk').hidden=n<2;
+  $('#enroll').innerHTML=n?work.counties.map((c,i)=>{
+    const st=base.counties.includes(c)?PP.status(base,c):{status:'unknown'};
+    const last=st.confirmed?(st.was?`Last answer (${PP.STATUS_LABEL[st.was].toLowerCase()}) is from ${PP.fmtDate(st.confirmed)} and has expired`:`Last confirmed ${PP.fmtDate(st.confirmed)}`):'Not confirmed yet';
+    return `<div class="erow" role="radiogroup" aria-label="${esc(c)} County"><div class="ehead"><span class="cname">${esc(c)} County</span><span class="last">${esc(last)}</span></div>
+      <div class="seg">${ANSWERS.map(([v,label])=>`<label><input type="radio" name="en${i}" value="${v}" data-c="${esc(c)}"${answers[c]===v?' checked':''}><span>${label}</span></label>`).join('')}</div></div>`;
+  }).join(''):'<p class="note">Add a county in step 3 first.</p>';
+}
+$('#enroll').addEventListener('change',e=>{if(e.target.dataset.c)answers[e.target.dataset.c]=e.target.value});
+$('#bulk').addEventListener('click',e=>{
+  const v=e.target.dataset.all;if(!v)return;
+  work.counties.forEach(c=>{answers[c]=v});renderEnroll();
+});
+
+function renderLists(){
+  const n=work.counties.length;
+  $('#scope').innerHTML=isNew?'These details will show on your new listing.':n>1?`These details are shared by your whole organization. A change here shows on your listing in <b>all ${n} counties</b> you serve.`:'These details show on your listing.';
+  const langs=[...LANGS,...work.languages.filter(l=>!LANGS.includes(l))];
+  $('#langs').innerHTML=langs.map(l=>`<button type="button" class="chip" data-v="${esc(l)}" aria-pressed="${work.languages.includes(l)}">${esc(l)}</button>`).join('');
+  $('#ages').innerHTML=PP.AGES.map(a=>`<button type="button" class="chip" data-v="${esc(a)}" aria-pressed="${work.ages.includes(a)}">${esc(a)}</button>`).join('');
+  $('#counties').innerHTML=work.counties.map(c=>`<span class="chip rm">${esc(c)}<button type="button" data-v="${esc(c)}" aria-label="Remove ${esc(c)} County">×</button></span>`).join('')||'<span class="note">No counties yet.</span>';
+  const add=$('#coAdd');add.innerHTML='';add.append(new Option('Add a county',''));
+  COUNTIES.filter(c=>!work.counties.includes(c)).forEach(c=>add.append(new Option(c+' County',c)));
+  renderEnroll();
+}
+function toggle(list,v){const i=list.indexOf(v);if(i<0)list.push(v);else list.splice(i,1)}
+$('#langs').addEventListener('click',e=>{const v=e.target.dataset.v;if(v){toggle(work.languages,v);renderLists()}});
+$('#ages').addEventListener('click',e=>{const v=e.target.dataset.v;if(v){toggle(work.ages,v);renderLists()}});
+$('#counties').addEventListener('click',e=>{const v=e.target.dataset.v;if(v){toggle(work.counties,v);delete answers[v];renderLists()}});
+$('#coAdd').addEventListener('change',e=>{if(e.target.value){work.counties.push(e.target.value);work.counties.sort();renderLists()}});
+function addLang(){
+  const raw=$('#langOther').value.trim();if(!raw)return;
+  const v=raw.replace(/\s+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  if(!work.languages.includes(v))work.languages.push(v);
+  $('#langOther').value='';renderLists();
+}
+$('#langAdd').addEventListener('click',addLang);
+$('#langOther').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addLang()}});
+
+// Review step: work out exactly what would change and show it back before anything is sent.
+function build(){
+  const val=f=>$('#f_'+f).value.replace(/\s+/g,' ').trim();
+  const after=PP.copy(base);
+  if(isNew)after.program=document.querySelector('input[name="prog"]:checked').value;
+  TEXT.forEach(f=>{after[f]=val(f)});
+  if(after.website&&!/^https?:\/\//i.test(after.website))after.website='https://'+after.website;
+  after.languages=[...work.languages].sort();
+  after.ages=PP.AGES.filter(a=>work.ages.includes(a));
+  after.counties=[...work.counties].sort();
+  const by={name:$('#byName').value.trim(),email:$('#byEmail').value.trim(),role:$('#byRole').value.trim()};
+  const note=$('#note').value.trim(),confirmAll=$('#confirmAll').checked;
+  const mail=/^\S+@\S+\.\S+$/;
+  const errs=[];
+  if(!after.name)errs.push("Add your program's name.");
+  if(!after.counties.length)errs.push('Add at least one county you serve.');
+  if(after.email&&!mail.test(after.email))errs.push("The referral email doesn't look right.");
+  if(after.phone&&after.phone.replace(/\D/g,'').length<10)errs.push('Add a 10-digit phone number, with area code.');
+  if(after.zip&&!/^\d{5}$/.test(after.zip))errs.push('The office ZIP should be 5 digits.');
+  if(!by.name)errs.push('Add your name in step 4.');
+  if(!mail.test(by.email))errs.push('Add your work email in step 4.');
+  // Details first, then one enrollment line per county answered. An unchanged answer still counts: it renews the confirmation date.
+  const changes=PP.diff(base,after).filter(c=>c.field!=='enrollment');
+  after.counties.forEach(c=>{
+    const to=answers[c];if(!to)return;
+    const from=base.counties.includes(c)?PP.status(base,c).status:'unknown';
+    if(to==='unknown'&&from==='unknown')return;
+    changes.push({field:'enrollment',county:c,from,to});
+  });
+  if(!errs.length&&!changes.length&&!confirmAll&&!note)errs.push("There's nothing to send yet. Answer the enrollment question, change a detail, or tick the box to confirm your listing is correct.");
+  if(errs.length)return {errs};
+  return {after,req:{
+    id:'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    submitted:new Date().toISOString(),date:PP.today(),dataVersion:DATA_VERSION,
+    siteKey:isNew?null:base.key,isNew,program:after.program,siteName:after.name,counties:isNew?after.counties:base.counties,
+    by,note,confirmAll,changes,state:'pending'}};
+}
+function show(id){
+  ['#f','#review','#done'].forEach(s=>{$(s).hidden=s!==id});
+  if(id!=='#f'){$(id).focus({preventScroll:true});$(id).scrollIntoView({block:'start'})}
+}
+$('#f').addEventListener('submit',e=>{
+  e.preventDefault();
+  if(!base)return;
+  const r=build();
+  if(r.errs){$('#err').textContent=r.errs.join(' ');$('#err').hidden=false;$('#err').scrollIntoView({block:'center'});return}
+  $('#err').hidden=true;request=r.req;
+  const site={counties:request.counties};
+  $('#reviewSub').textContent=`${request.siteName} (${request.program})${isNew?', new listing':''}. Nothing changes on the finder until Parent Possible approves it.`;
+  $('#reviewList').innerHTML=(request.changes.map(ch=>PP.changeRow(ch,isNew?{counties:[]}:site)).join('')||'<p class="note">No changes to the listing.</p>')
+    +(request.confirmAll?'<div class="chg"><span class="what">Whole listing checked</span><span class="where">Whole listing</span><span class="ft">Everything on it is correct as of today.</span></div>':'')
+    +(request.note?`<div class="chg"><span class="what">Note to Parent Possible</span><span class="ft">${esc(request.note)}</span></div>`:'');
+  show('#review');
+});
+$('#back').addEventListener('click',()=>show('#f'));
+
+function emailText(r){
+  const enr=r.changes.filter(c=>c.field==='enrollment'),det=r.changes.filter(c=>c.field!=='enrollment');
+  const n=r.counties.length;
+  return [
+    `To: ${PP.INBOX}`,
+    `Reply-To: ${r.by.email}`,
+    `Subject: Program Finder ${r.isNew?'new listing request':'listing update'}: ${r.siteName} (${r.program})`,
+    '',
+    `${r.by.name}${r.by.role?', '+r.by.role:''} sent ${r.isNew?'a request for a new listing':'an update'} on ${PP.fmtDate(r.date)}.`,
+    '',
+    ...(enr.length?['Enrollment (each county is separate)',...enr.map(c=>`- ${c.county} County: ${PP.STATUS_LABEL[c.to]}${c.from===c.to?' (no change, confirmed again)':` (was: ${PP.STATUS_LABEL[c.from]})`}`),'']:[]),
+    ...(det.length?[r.isNew?'Listing details':`Details (${n>1?`apply in all ${n} counties`:'whole listing'})`,...det.map(c=>{const [f,t]=PP.fromTo(c);return `- ${PP.label(c)}: ${t}${r.isNew?'':` (was: ${f})`}`}),'']:[]),
+    r.confirmAll?'They checked the whole listing and say everything on it is correct.':null,
+    r.note?`Note: ${r.note}`:null,
+    r.confirmAll||r.note?'':null,
+    'Nothing has changed on the finder yet. Review and approve this update on the staff screen:',
+    new URL('admin.html',location.href).href.split('?')[0],
+  ].filter(l=>l!==null).join('\n');
+}
+$('#send').addEventListener('click',()=>{
+  const queue=PP.read(PP.REQ_KEY,[]);
+  queue.push(request);PP.write(PP.REQ_KEY,queue);
+  $('#doneH').textContent=`Thank you, ${request.by.name.split(' ')[0]}. Your update is with Parent Possible.`;
+  $('#nextAsk').textContent=`Parent Possible will ask you to confirm enrollment again in about a month. Answers older than ${PP.STALE_DAYS} days stop showing on the finder.`;
+  const link=request.isNew?'':new URL('update.html?site='+request.siteKey,location.href).href;
+  $('#bookmark').hidden=!link;
+  $('#bookmark').innerHTML=link?`Save this link to skip step 1 next time: <a href="${esc(link)}">${esc(link)}</a>`:'';
+  $('#preview').textContent=emailText(request);
+  show('#done');
+});
+$('#copyCode').addEventListener('click',async()=>{PP.toast(await PP.clip(PP.encode(request))?'Update code copied':'Could not copy. Try another browser.')});
+$('#again').addEventListener('click',()=>{$('#site').value='';pick('');$('#note').value='';show('#f');scrollTo(0,0)});
+
+
+// Open on a site straight away when the link names one.
+(function start(){
+  const key=new URLSearchParams(location.search).get('site');
+  if(key&&SITES.some(s=>s.key===key)){$('#site').value=key;pick(key)}
+})();
+
+// Let WordPress size the iframe to fit, the same way the finder does.
+function postHeight(){try{parent.postMessage({type:'pp-finder-height',height:Math.ceil(document.body.getBoundingClientRect().height)},'*')}catch(e){}}
+new ResizeObserver(postHeight).observe(document.body);
+</script>
